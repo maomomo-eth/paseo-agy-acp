@@ -12,6 +12,7 @@ interface StreamFoldState {
   fence?: { marker: string; length: number };
   disabled: boolean;
   messageId?: string;
+  outputMessageId?: string;
   template: JsonRpcMessage;
 }
 
@@ -23,6 +24,8 @@ interface TextSegment {
 export class SystemMessageFolder {
   readonly #states = new Map<string, StreamFoldState>();
   readonly #carouselUnroller = new CarouselUnroller();
+  readonly #usedMessageIds = new Map<string, Set<string>>();
+  #messageSequence = 0;
 
   reset(sessionId?: string): void {
     if (sessionId) {
@@ -42,7 +45,7 @@ export class SystemMessageFolder {
       const state = this.#states.get(id);
       if (!state) continue;
       const text = this.#carouselUnroller.unroll(state.buffer, id) + this.#carouselUnroller.finish(id);
-      if (text) results.push(this.#withText(state.template, text, false));
+      if (text) results.push(this.#withText(state.template, text, false, state.outputMessageId));
       this.#states.delete(id);
     }
     return results;
@@ -74,7 +77,10 @@ export class SystemMessageFolder {
       state = undefined;
     }
     if (!state) {
-      state = { buffer: "", line: "", disabled: false, messageId, template: message };
+      state = {
+        buffer: "", line: "", disabled: false, messageId, template: message,
+        outputMessageId: this.#allocateMessageId(sessionId, messageId)
+      };
       this.#states.set(sessionId, state);
     }
     state.template = message;
@@ -82,13 +88,28 @@ export class SystemMessageFolder {
     state.buffer = "";
     for (const segment of this.#splitText(rawText, state)) {
       const text = segment.isSystem ? segment.text : this.#carouselUnroller.unroll(segment.text, sessionId);
-      if (text) results.push(this.#withText(message, text, segment.isSystem));
+      if (text) results.push(this.#withText(message, text, segment.isSystem, state.outputMessageId));
+      if (segment.isSystem) state.outputMessageId = this.#allocateMessageId(sessionId, messageId);
     }
     if (update.sessionUpdate === "agent_message") results.push(...this.finish(sessionId));
     return results;
   }
 
-  #withText(message: JsonRpcMessage, text: string, isSystem: boolean): JsonRpcMessage {
+  // Paseo 会按显式 messageId 拼接正文；独立消息不能复用内核的旧 ID。
+  #allocateMessageId(sessionId: string, messageId?: string): string | undefined {
+    let usedIds = this.#usedMessageIds.get(sessionId);
+    if (!usedIds) {
+      usedIds = new Set<string>();
+      this.#usedMessageIds.set(sessionId, usedIds);
+    }
+    // 空字符串记录首次无 ID 的流；之后必须显式结束 Paseo 的备用 ID。
+    let outputId = messageId || "";
+    while (usedIds.has(outputId)) outputId = `${messageId || "system"}:paseo-segment:${++this.#messageSequence}`;
+    usedIds.add(outputId);
+    return outputId || undefined;
+  }
+
+  #withText(message: JsonRpcMessage, text: string, isSystem: boolean, messageId?: string): JsonRpcMessage {
     const params = ("params" in message ? message.params : {}) as Record<string, unknown>;
     const update = params.update as Record<string, unknown>;
     const content = update.content as Record<string, unknown>;
@@ -98,9 +119,10 @@ export class SystemMessageFolder {
         ...params,
         update: {
           ...update,
+          ...(messageId === undefined ? {} : { messageId }),
           ...(isSystem ? {
             sessionUpdate: "agent_thought_chunk",
-            messageId: `${typeof update.messageId === "string" ? update.messageId : "system"}:system-folded`
+            messageId: `${messageId ?? "system"}:system-folded`
           } : {}),
           content: { ...content, text }
         }

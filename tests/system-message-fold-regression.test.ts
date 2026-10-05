@@ -69,7 +69,9 @@ describe("系统消息折叠回归", () => {
     expect(output.every(update => update.sessionUpdate === "agent_message_chunk")).toBe(true);
     expect(output.map(update => update.content.text).join("")).toBe(text);
     expect(folder.finish("test-session")).toEqual([]);
-    expect(folder.transform(chunk("下一轮正文"))).toEqual([chunk("下一轮正文")]);
+    const next = updates(folder.transform(chunk("下一轮正文")));
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({ sessionUpdate: "agent_message_chunk", content: { text: "下一轮正文" } });
   });
 
   it("切换 messageId 时将旧消息未闭合片段还给旧消息", () => {

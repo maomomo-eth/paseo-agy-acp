@@ -37,6 +37,37 @@ function harness() {
 }
 
 describe("系统消息在代理生命周期中的刷新", () => {
+  it("工具完成后保持正文字符并隔离复用的原生消息 ID", async () => {
+    const h = harness();
+    try {
+      await h.prompt(1);
+      const first: JsonRpcMessage = {
+        jsonrpc: "2.0", method: "session/update",
+        params: { sessionId: "test-session", update: { sessionUpdate: "agent_message_chunk", messageId: "native-id", content: { type: "text", text: "Background task started." } } }
+      };
+      const completion: JsonRpcMessage = {
+        jsonrpc: "2.0", method: "session/update",
+        params: { sessionId: "test-session", update: { sessionUpdate: "tool_call_update", toolCallId: "test-task", status: "completed" } }
+      };
+      const second: JsonRpcMessage = {
+        jsonrpc: "2.0", method: "session/update",
+        params: { sessionId: "test-session", update: { sessionUpdate: "agent_message_chunk", messageId: "native-id", content: { type: "text", text: "### Task result\n\n**Success**" } } }
+      };
+      h.reply(first);
+      h.reply(completion);
+      h.reply(second);
+      expect(h.messages).toHaveLength(3);
+      expect(h.messages[0]).toEqual(first);
+      expect(h.messages[1]).toEqual(completion);
+      const update = (h.messages[2] as { params: { update: { messageId: string; content: { text: string } } } }).params.update;
+      expect(update.messageId).not.toBe("native-id");
+      expect(update.content.text).toBe("### Task result\n\n**Success**");
+      h.reply({ jsonrpc: "2.0", id: 1, result: { stopReason: "end_turn" } });
+    } finally {
+      await h.close();
+    }
+  });
+
   it.each(["end_turn", "cancelled", "error"])("%s 响应之前刷新未闭合正文，下一轮不受影响", async reason => {
     const h = harness();
     try {
