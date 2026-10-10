@@ -5,7 +5,7 @@
 **Google 官方 Antigravity ACP 内核面向 Paseo 的可靠产品适配器**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-2.4.2-blue?style=flat-square)](./package.json)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue?style=flat-square)](./package.json)
 [![npm](https://img.shields.io/npm/v/paseo-agy-acp?style=flat-square)](https://www.npmjs.com/package/paseo-agy-acp)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen?style=flat-square)](./package.json)
 [![ACP](https://img.shields.io/badge/ACP-NDJSON%20v1-8A2BE2?style=flat-square)](https://agentclientprotocol.com)
@@ -91,7 +91,7 @@ Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 <!-- readme:requirements -->
 ## 环境要求
 
-- 支持 Generic ACP provider 的 **Paseo**
+- **Paseo** v0.11.2 或更新版本，支持自定义 ACP provider
 - **Node.js 22 或更新版本**
 - 可以完成官方 `oauth-personal` 的 Antigravity 账号
 - 启用 Admission 时，系统需支持 Linux 文件 owner 与 mode
@@ -107,7 +107,7 @@ Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 ### 1. 完成认证
 
 ```bash
-npx -y paseo-agy-acp@2.4.2 --login
+npx -y paseo-agy-acp@2.5.0 --login
 ```
 
 第一次运行会下载并配置官方内核 1.2.1。下载约 320 MiB，放在 `~/.local/opt/`。
@@ -121,7 +121,7 @@ OAuth 由官方内核完成。Token 保留在内核自己的状态中，本适�
 ```bash
 export AGY_ACP_STATE_DIR="$HOME/.local/state/paseo-agy-acp/account-name"
 install -d -m 700 "$AGY_ACP_STATE_DIR"
-npx -y --package=paseo-agy-acp@2.4.2 \
+npx -y --package=paseo-agy-acp@2.5.0 \
   agy-acp-prepare-state "$AGY_ACP_STATE_DIR"
 ```
 
@@ -130,30 +130,56 @@ npx -y --package=paseo-agy-acp@2.4.2 \
 
 ### 3. 配置 Paseo provider
 
-在 `$PASEO_HOME/config.json` 或 `~/.paseo/config.json` 中增加或更新 provider：
+在 `$PASEO_HOME/config.json` 或 `~/.paseo/config.json` 中增加或更新 provider。
+provider id 是 `agents.providers` 下的键：
 
 ```json
 {
-  "providers": {
-    "antigravity": {
-      "type": "acp",
-      "command": ["npx", "-y", "paseo-agy-acp@2.4.2"],
-      "env": {
-        "AGY_ACP_ADMISSION_ENABLED": "true",
-        "AGY_ACP_STATE_DIR": "/home/YOU/.local/state/paseo-agy-acp/account-name"
+  "agents": {
+    "providers": {
+      "paseo-agy-acp": {
+        "extends": "acp",
+        "label": "Antigravity Pro",
+        "command": ["npx", "-y", "paseo-agy-acp@2.5.0"],
+        "env": {
+          "AGY_ACP_ADMISSION_ENABLED": "true",
+          "AGY_ACP_STATE_DIR": "/home/YOU/.local/state/paseo-agy-acp/account-name"
+        }
       }
     }
   }
 }
 ```
 
+Paseo v0.11.2 要求自定义 ACP provider 声明 `extends: "acp"` 和 `label`。
+provider id 必须匹配 `^[a-z][a-z0-9-]*$`，`paseo-agy-acp` 符合。
+
 Paseo 会向 provider 进程提供 `PASEO_AGENT_ID` 和 `PASEO_AGENT_CWD`。只有在明确
 需要不受 Admission 约束的单 agent 运行时，才省略两个 Admission 变量。
 
+#### 与 Paseo 内置 agy provider 共存
+
+Paseo v0.11.2 新增了内置的 agy provider，两者是两个不同的程序：
+
+- Paseo 内置 agy provider（id `antigravity`，显示名 **Antigravity**）走宿主机的
+  `agy` CLI（从 `PATH` 查找），登录保存在 `~/.gemini/antigravity-cli`。
+- `paseo-agy-acp`（id `paseo-agy-acp`，显示名 **Antigravity Pro**）不启动该
+  `agy` CLI，而是启动 `agy-acp`，由它运行官方 ACP 内核 `agy_acp_server`，
+  登录保存在 `~/.gemini/antigravity-acp`。
+
+两者可以同时启用：内置 provider 运行自己的 `agy` 进程，本适配器运行自己的
+`agy_acp_server` 进程。登录互相独立，因此可以分别登录两个 Antigravity 账号，
+同时使用两个账号各自的 Gemini Pro 配额。适配器的 Admission 队列只限制
+`agy_acp_server`，不限制内置 provider 的 `agy` 进程。
+
+如果本适配器原先配置在 `antigravity` 键下，必须把该键改名为
+`paseo-agy-acp`。旧键仍然存在时，Paseo 会隐藏内置 agy provider，并把
+`antigravity` 这个 id 路由给本适配器。
+
 ### 4. 重启并验证
 
-重启 Paseo daemon，创建 provider 为 `antigravity` 的 agent，选择受支持模式并
-发送一个简单 prompt。`npx` 启动的是 Paseo 使用的 stdio ACP server，不是独立
+重启 Paseo daemon，创建 provider 为 `paseo-agy-acp` 的 agent，选择受支持模式
+并发送一个简单 prompt。`npx` 启动的是 Paseo 使用的 stdio ACP server，不是独立
 聊天程序。
 
 <!-- readme:configuration -->

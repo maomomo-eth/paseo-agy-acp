@@ -2,6 +2,43 @@
 
 All notable changes to `paseo-agy-acp` are recorded here.
 
+## 2.5.0 - 2026-10-10
+
+### Changed
+
+- Use the Paseo provider id `paseo-agy-acp` with display name **Antigravity
+  Pro** instead of `antigravity`. Paseo v0.11.2 added its own built-in agy
+  provider (id `antigravity`, display name Antigravity) that starts the host
+  `agy` CLI (`/home/tiezbro/.local/bin/agy`); its login lives in
+  `~/.gemini/antigravity-cli`. This adapter does not start that `agy` CLI; it
+  starts `agy-acp`, which runs the official ACP kernel `agy_acp_server`, and
+  its login lives in `~/.gemini/antigravity-acp`.
+- The built-in provider and this adapter can run at the same time: the built-in
+  provider runs its `agy` processes, and this adapter runs its `agy_acp_server`
+  processes. Separate logins mean two Antigravity accounts, so both accounts'
+  Gemini Pro quotas can be used at the same time. Admission only limits
+  `agy_acp_server`; it does not limit the built-in provider's `agy` processes.
+- Configure the custom provider with the Paseo v0.11.2 shape
+  `extends: "acp"` plus `label: "Antigravity Pro"` under `agents.providers`.
+  README (EN/ZH) examples, version pins, the version badge, tests, and the
+  official-kernel smoke now expect `2.5.0`.
+- Existing users who keyed this adapter as `antigravity` must rename that key
+  to `paseo-agy-acp`. While the old key remains, Paseo hides the built-in agy
+  provider and routes the id `antigravity` to this adapter.
+
+### Unchanged
+
+- Admission keeps the internal partition string `provider: "antigravity"`; the
+  live state directory keys seats with it, so changing it would split the
+  queue.
+- ACP `agentInfo` name stays `agy-acp`, and the npm keyword stays
+  `antigravity`.
+
+### Verification
+
+- Complete validation: 43 test files, 257 passed, 1 skipped; architecture and
+  secret checks passed.
+
 ## 2.4.2 - 2026-10-10
 
 ### Fixed

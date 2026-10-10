@@ -5,7 +5,7 @@
 **Reliable Paseo adapter for Google's official Antigravity ACP kernel**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-2.4.2-blue?style=flat-square)](./package.json)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue?style=flat-square)](./package.json)
 [![npm](https://img.shields.io/npm/v/paseo-agy-acp?style=flat-square)](https://www.npmjs.com/package/paseo-agy-acp)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen?style=flat-square)](./package.json)
 [![ACP](https://img.shields.io/badge/ACP-NDJSON%20v1-8A2BE2?style=flat-square)](https://agentclientprotocol.com)
@@ -102,7 +102,7 @@ Paseo agents.
 <!-- readme:requirements -->
 ## Requirements
 
-- **Paseo** with Generic ACP provider support
+- **Paseo** v0.11.2 or newer with custom ACP provider support
 - **Node.js 22 or newer**
 - An Antigravity account able to complete official `oauth-personal`
 - Linux filesystem ownership and mode support when Admission is enabled
@@ -119,7 +119,7 @@ wrapper. A different existing path is used as-is.
 ### 1. Authenticate
 
 ```bash
-npx -y paseo-agy-acp@2.4.2 --login
+npx -y paseo-agy-acp@2.5.0 --login
 ```
 
 The first run downloads and configures official kernel 1.2.1. That download is
@@ -136,7 +136,7 @@ delegation.
 ```bash
 export AGY_ACP_STATE_DIR="$HOME/.local/state/paseo-agy-acp/account-name"
 install -d -m 700 "$AGY_ACP_STATE_DIR"
-npx -y --package=paseo-agy-acp@2.4.2 \
+npx -y --package=paseo-agy-acp@2.5.0 \
   agy-acp-prepare-state "$AGY_ACP_STATE_DIR"
 ```
 
@@ -146,32 +146,61 @@ creates or validates the directory and refuses an existing permissive path.
 ### 3. Configure the Paseo provider
 
 Add or update the provider in `$PASEO_HOME/config.json` or
-`~/.paseo/config.json`:
+`~/.paseo/config.json`. The provider id is the key under `agents.providers`:
 
 ```json
 {
-  "providers": {
-    "antigravity": {
-      "type": "acp",
-      "command": ["npx", "-y", "paseo-agy-acp@2.4.2"],
-      "env": {
-        "AGY_ACP_ADMISSION_ENABLED": "true",
-        "AGY_ACP_STATE_DIR": "/home/YOU/.local/state/paseo-agy-acp/account-name"
+  "agents": {
+    "providers": {
+      "paseo-agy-acp": {
+        "extends": "acp",
+        "label": "Antigravity Pro",
+        "command": ["npx", "-y", "paseo-agy-acp@2.5.0"],
+        "env": {
+          "AGY_ACP_ADMISSION_ENABLED": "true",
+          "AGY_ACP_STATE_DIR": "/home/YOU/.local/state/paseo-agy-acp/account-name"
+        }
       }
     }
   }
 }
 ```
 
+Paseo v0.11.2 requires `extends: "acp"` and a `label` for a custom ACP
+provider. Provider ids must match `^[a-z][a-z0-9-]*$`; `paseo-agy-acp` does.
+
 Paseo supplies `PASEO_AGENT_ID` and `PASEO_AGENT_CWD` to the provider process.
 Omit the two Admission variables only when you intentionally want unfenced
 single-agent operation.
 
+#### Coexistence with Paseo's built-in agy provider
+
+Paseo v0.11.2 added its own built-in Antigravity provider. The two providers
+are separate programs:
+
+- Paseo's built-in agy provider (id `antigravity`, display name **Antigravity**)
+  starts the host `agy` CLI (resolved from `PATH`). Its login lives in
+  `~/.gemini/antigravity-cli`.
+- `paseo-agy-acp` (id `paseo-agy-acp`, display name **Antigravity Pro**) does
+  not start that `agy` CLI. It starts `agy-acp`, which runs the official ACP
+  kernel `agy_acp_server`. Its login lives in `~/.gemini/antigravity-acp`.
+
+Both can be enabled at the same time: Paseo's built-in provider runs its `agy`
+processes, and this adapter runs its `agy_acp_server` processes. Because the
+logins are separate, they can be signed into two Antigravity accounts, so each
+account's Gemini Pro quota can be used at the same time. The adapter's
+Admission queue only limits `agy_acp_server`; it does not limit the built-in
+provider's `agy` processes.
+
+Existing users who configured this adapter under the key `antigravity` must
+rename that key to `paseo-agy-acp`. While the old key remains, Paseo hides the
+built-in agy provider and routes the id `antigravity` to this adapter.
+
 ### 4. Restart and verify
 
-Restart the Paseo daemon, create an agent with provider `antigravity`, select a
-supported mode, and send a simple prompt. `npx` starts a stdio ACP server for
-Paseo; it is not a standalone chat application.
+Restart the Paseo daemon, create an agent with provider `paseo-agy-acp`,
+select a supported mode, and send a simple prompt. `npx` starts a stdio ACP
+server for Paseo; it is not a standalone chat application.
 
 <!-- readme:configuration -->
 ## Configuration
