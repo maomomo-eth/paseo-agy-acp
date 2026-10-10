@@ -2,6 +2,29 @@
 
 All notable changes to `paseo-agy-acp` are recorded here.
 
+## 2.4.2 - 2026-10-10
+
+### Fixed
+
+- Fold a complete `<SYSTEM_MESSAGE>` envelope into a Paseo Thinking card when it
+  starts a line outside a code fence. Ordinary tag mentions, fenced examples,
+  and unclosed events stay in the assistant body. Buffered text is released on
+  turn end, cancel, and message switch.
+- Unroll `carousel` fences and slide markers into standard Markdown.
+- Give a reused kernel message id its own body segment after a tool update or
+  a later turn, so a Markdown heading is not appended to the earlier prompt.
+
+### Verification
+
+- Complete validation: 43 test files, 257 passed, 1 skipped; architecture and
+  secret checks passed.
+
+### Contributors
+
+- Thanks to [@maomomo-eth](https://github.com/maomomo-eth) for the system-event,
+  carousel, and message-boundary work in
+  [#14](https://github.com/tiezbro/paseo-agy-acp/pull/14).
+
 ## 2.4.1 - 2026-09-26
 
 ### Fixed
