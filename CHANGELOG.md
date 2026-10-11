@@ -2,6 +2,51 @@
 
 All notable changes to `paseo-agy-acp` are recorded here.
 
+## 2.5.1 - 2026-10-11
+
+### Changed
+
+- Upgrade the managed official Antigravity ACP kernel from 1.2.1 to 1.3.0 for
+  every supported platform. New downloads land in
+  `~/.local/opt/agy-acp-server-1.3.0` and are verified against the 1.3.0
+  SHA-256 pins before use; a mismatch fails closed.
+- Re-pin the Linux compatibility lifecycle to the 1.3.0 artifact hashes. The
+  CCPA request transform is unchanged because
+  `ccpa_connection/proxy_server.py` is byte-identical to 1.2.1. The catalog
+  patch keeps its behavior: the 1.3.0 `allow_third_party` client gate
+  (JetBrains/Zed/Xcode only) is replaced with the same local
+  `is_catalog_model` filter used on 1.2.1, so Paseo still sees the entitled
+  non-Gemini models.
+- README (EN/ZH), the compatibility runbook, version pins, the version badge,
+  tests, and the official-kernel smoke now expect `2.5.1` / kernel `1.3.0`.
+
+### Unchanged
+
+- The Paseo provider id stays `paseo-agy-acp` with display name **Antigravity
+  Pro**; Paseo's built-in provider keeps the id `antigravity`. Admission keeps
+  `provider: "antigravity"`, the ACP identity stays `agy-acp`, and the npm
+  keyword stays `antigravity`.
+
+### Fixed
+
+- The model-parity acceptance harness now waits for the whole process group
+  to disappear within the existing SIGTERM/SIGKILL grace budgets before it
+  claims process-group cleanup, instead of trusting the direct child's exit
+  event. Under CPU load the spawned grandchild could still be alive or
+  unreaped at that instant, which made `process_cleanup_unconfirmed`
+  intermittent in CI. Race timers are also cleared once they are settled, so
+  the harness process no longer sits idle for up to a grace period after a
+  run finishes.
+
+### Verification
+
+- Complete validation: 43 test files, 258 passed, 1 skipped; architecture and
+  secret checks passed.
+- Local lifecycle `prepare`/`verify` against the downloaded 1.3.0 Linux x86_64
+  archive succeeded for artifact
+  `1.3.0-cf6feaebdacf-compat-v1-0c966320bdbb-110677625daa`, and the patched
+  `model_selection.py` and `proxy_server.py` compile.
+
 ## 2.5.0 - 2026-10-10
 
 ### Changed

@@ -12,8 +12,12 @@ export const RC01_KERNEL_COMPAT_PATCH_PLAN: KernelCompatPatchPlan = Object.freez
     Object.freeze({
       id: "rc01-model-selection-catalog",
       target: "modelSelection" as const,
-      find: "if not ccpa_id.startswith(\"gemini\"):",
-      replacement: "if not is_catalog_model(ccpa_id):"
+      // Official 1.3.0 gates non-Gemini models behind `allow_third_party`, which
+      // only JetBrains/Zed/Xcode clients satisfy. The replacement keeps the
+      // 1.2.1 profile behavior: Gemini plus the locally supported third-party
+      // catalog ids, for every client.
+      find: "    if not allow_third_party and not ccpa_id.startswith(\n        _GEMINI_MODEL_ID_PREFIX\n    ):\n",
+      replacement: "    if not is_catalog_model(ccpa_id):\n"
     }),
     Object.freeze({
       id: "rc01-proxy-server-import",

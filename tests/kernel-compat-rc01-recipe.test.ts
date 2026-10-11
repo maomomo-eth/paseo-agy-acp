@@ -13,7 +13,9 @@ const ACP_SERVER_DIRECTORY = "google3/cloud/developer_experience/antigravity_ext
 const RUNFILES_DIRECTORY = "agy_acp_server.runfiles";
 const MODEL_SELECTION_SOURCE = [
   "def _parse_ccpa_response(ccpa_id):",
-  '    if not ccpa_id.startswith("gemini"):',
+  "    if not allow_third_party and not ccpa_id.startswith(",
+  "        _GEMINI_MODEL_ID_PREFIX",
+  "    ):",
   "        return ccpa_id",
   "    return None",
   ""
@@ -47,8 +49,8 @@ describe("RC01 official kernel compatibility marker recipe", () => {
       {
         id: "rc01-model-selection-catalog",
         target: "modelSelection",
-        find: "if not ccpa_id.startswith(\"gemini\"):",
-        replacement: "if not is_catalog_model(ccpa_id):"
+        find: "    if not allow_third_party and not ccpa_id.startswith(\n        _GEMINI_MODEL_ID_PREFIX\n    ):\n",
+        replacement: "    if not is_catalog_model(ccpa_id):\n"
       },
       {
         id: "rc01-proxy-server-import",

@@ -13,7 +13,7 @@ import { OfficialKernelCompatLifecycle } from "./kernel-compat-lifecycle.js";
 import { PRODUCTION_KERNEL_COMPAT_PINS } from "./kernel-compat-pins.js";
 import { RC01_KERNEL_COMPAT_PATCH_PLAN } from "./kernel-compat-rc01-recipe.js";
 
-const MANAGED_ARTIFACT_PREFIX = "1.2.1-adbf34295671-";
+const MANAGED_ARTIFACT_PREFIX = "1.3.0-cf6feaebdacf-";
 
 export interface OfficialKernelDownload {
   readonly id: string;
@@ -25,37 +25,37 @@ export interface OfficialKernelDownload {
 const OFFICIAL_KERNEL_DOWNLOADS: Readonly<Record<string, OfficialKernelDownload>> = Object.freeze({
   "linux-x64": Object.freeze({
     id: "linux-x64",
-    url: "https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-1.2.1-linux-x86_64.zip",
+    url: "https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-1.3.0-linux-x86_64.zip",
     binaryName: "agy_acp_server.par",
     compat: true
   }),
   "linux-arm64": Object.freeze({
     id: "linux-arm64",
-    url: "https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-1.2.1-linux-arm64.zip",
+    url: "https://dl.google.com/agy-extensions/releases/linux/agy-acp-server-1.3.0-linux-arm64.zip",
     binaryName: "agy_acp_server.par",
     compat: false
   }),
   "darwin-arm64": Object.freeze({
     id: "darwin-arm64",
-    url: "https://dl.google.com/agy-extensions/releases/macos/agy-acp-server-1.2.1-darwin-arm64.zip",
+    url: "https://dl.google.com/agy-extensions/releases/macos/agy-acp-server-1.3.0-darwin-arm64.zip",
     binaryName: "agy_acp_server.par",
     compat: false
   }),
   "darwin-x64": Object.freeze({
     id: "darwin-x64",
-    url: "https://dl.google.com/agy-extensions/releases/macos/agy-acp-server-1.2.1-darwin-x86_64.zip",
+    url: "https://dl.google.com/agy-extensions/releases/macos/agy-acp-server-1.3.0-darwin-x86_64.zip",
     binaryName: "agy_acp_server.par",
     compat: false
   }),
   "win32-x64": Object.freeze({
     id: "win32-x64",
-    url: "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-1.2.1-windows-x86_64.zip",
+    url: "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-1.3.0-windows-x86_64.zip",
     binaryName: "agy_acp_server.exe",
     compat: false
   }),
   "win32-arm64": Object.freeze({
     id: "win32-arm64",
-    url: "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-1.2.1-windows-arm64.zip",
+    url: "https://dl.google.com/agy-extensions/releases/windows/agy-acp-server-1.3.0-windows-arm64.zip",
     binaryName: "agy_acp_server.exe",
     compat: false
   })
@@ -67,13 +67,13 @@ export function officialKernelDownload(
 ): OfficialKernelDownload {
   const download = OFFICIAL_KERNEL_DOWNLOADS[`${platform}-${arch}`];
   if (download === undefined) {
-    throw new Error(`no official Antigravity ACP 1.2.1 download for ${platform} ${arch}`);
+    throw new Error(`no official Antigravity ACP 1.3.0 download for ${platform} ${arch}`);
   }
   return download;
 }
 
 export function managedOfficialKernelRoot(home = homedir()): string {
-  return path.join(home, ".local", "opt", "agy-acp-server-1.2.1");
+  return path.join(home, ".local", "opt", "agy-acp-server-1.3.0");
 }
 
 export function managedCompatRoot(home = homedir()): string {
@@ -114,7 +114,7 @@ export async function ensureManagedOfficialKernel(environment: NodeJS.ProcessEnv
       patchPlan: RC01_KERNEL_COMPAT_PATCH_PLAN
     });
     await lifecycle.activate(prepared.artifactId);
-    process.stderr.write(`paseo-agy-acp is using the managed 1.2.1 kernel at ${wrapper}\n`);
+    process.stderr.write(`paseo-agy-acp is using the managed 1.3.0 kernel at ${wrapper}\n`);
     return wrapper;
   }
   return ensureStockOfficialBinary(officialRoot, download);
@@ -133,7 +133,7 @@ async function currentManagedWrapper(home: string): Promise<boolean> {
 async function ensureStockOfficialBinary(root: string, download: OfficialKernelDownload): Promise<string> {
   const binaryPath = path.join(root, download.binaryName);
   if (!existsSync(binaryPath)) await ensureOfficialPayload(root, download);
-  process.stderr.write(`paseo-agy-acp is using the official 1.2.1 kernel at ${binaryPath}\n`);
+  process.stderr.write(`paseo-agy-acp is using the official 1.3.0 kernel at ${binaryPath}\n`);
   return binaryPath;
 }
 
@@ -152,7 +152,7 @@ async function ensureOfficialPayload(root: string, download: OfficialKernelDownl
     return;
   }
   const zipPath = path.join(root, "agy-acp-server.zip.partial");
-  process.stderr.write(`Downloading the official Antigravity ACP kernel 1.2.1 for ${download.id}\n${download.url}\n`);
+  process.stderr.write(`Downloading the official Antigravity ACP kernel 1.3.0 for ${download.id}\n${download.url}\n`);
   await downloadFile(download.url, zipPath);
   const finalZip = path.join(root, "agy-acp-server.zip");
   renameSync(zipPath, finalZip);

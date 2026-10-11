@@ -78,13 +78,13 @@ function observation(created: KernelCompatP2Fixture): {
 }
 
 describe("P2 official kernel compatibility pins", () => {
-  it("keeps the frozen 1.2.1 hashes and real runfiles-relative target paths", () => {
-    expect(PRODUCTION_KERNEL_COMPAT_PINS.profileId).toBe("1.2.1");
-    expect(PRODUCTION_KERNEL_COMPAT_PINS.parSha256).toBe("adbf34295671d1fd68b347efe4e4e2587816023cf41b9eff92c451834eb3de95");
-    expect(PRODUCTION_KERNEL_COMPAT_PINS.externalHarnessSha256).toBe("428236f899a22181ecb47b2885b167e71d4f1a661f8ce0046225174a32018f72");
+  it("keeps the frozen 1.3.0 hashes and real runfiles-relative target paths", () => {
+    expect(PRODUCTION_KERNEL_COMPAT_PINS.profileId).toBe("1.3.0");
+    expect(PRODUCTION_KERNEL_COMPAT_PINS.parSha256).toBe("cf6feaebdacfc2255dcfc8883db99b15de8554698554e2a1e78e5ccec1c68a20");
+    expect(PRODUCTION_KERNEL_COMPAT_PINS.externalHarnessSha256).toBe("63042ca43fc7a69600683920f7706689b82cf8aecefe21dc18cf35e99c9dde4d");
     expect(PRODUCTION_KERNEL_COMPAT_PINS.targets.modelSelection).toMatchObject({
       relativePath: `${ACP_SERVER_DIRECTORY}/model_selection.py`,
-      preimageSha256: "1348ec7c5d9e2b157e22be00730c265c0e396af9b1e87113ca28c28f55dd684d"
+      preimageSha256: "0c0ea7564fde8d66f9a789838d6542c6ae2da18710f557ebc30975200e39656b"
     });
     expect(PRODUCTION_KERNEL_COMPAT_PINS.targets.proxyServer).toMatchObject({
       relativePath: `${ACP_SERVER_DIRECTORY}/ccpa_connection/proxy_server.py`,
@@ -92,7 +92,7 @@ describe("P2 official kernel compatibility pins", () => {
     });
     expect(PRODUCTION_KERNEL_COMPAT_PINS.targets.serverControl).toMatchObject({
       relativePath: `${ACP_SERVER_DIRECTORY}/server.py`,
-      preimageSha256: "63101334b325e70d5fe58b1c36f64c0901eb305ffcc51b17c2bda8b32aa4df4c",
+      preimageSha256: "4b2171c74c116346260a9aa24e5372190bf0ad66cad8acebc350e89203157fe3",
       patchable: false
     });
   });
