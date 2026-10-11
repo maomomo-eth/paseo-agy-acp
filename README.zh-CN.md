@@ -5,7 +5,7 @@
 **Google 官方 Antigravity ACP 内核面向 Paseo 的可靠产品适配器**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-2.5.0-blue?style=flat-square)](./package.json)
+[![Version](https://img.shields.io/badge/version-2.5.1-blue?style=flat-square)](./package.json)
 [![npm](https://img.shields.io/npm/v/paseo-agy-acp?style=flat-square)](https://www.npmjs.com/package/paseo-agy-acp)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen?style=flat-square)](./package.json)
 [![ACP](https://img.shields.io/badge/ACP-NDJSON%20v1-8A2BE2?style=flat-square)](https://agentclientprotocol.com)
@@ -96,7 +96,7 @@ Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 - 可以完成官方 `oauth-personal` 的 Antigravity 账号
 - 启用 Admission 时，系统需支持 Linux 文件 owner 与 mode
 
-首次启动时，适配器按当前操作系统从 Google 下载对应的官方 Antigravity ACP 1.2.1
+首次启动时，适配器按当前操作系统从 Google 下载对应的官方 Antigravity ACP 1.3.0
 包。npm 包本身不包含这些内核。Linux x86_64 还会装上本机兼容包装器。
 `PASEO_AGY_ACP_OFFICIAL_BIN` 留空，或继续指向托管包装器即可。指向其他已存在路径时，
 按该路径启动。
@@ -107,10 +107,10 @@ Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 ### 1. 完成认证
 
 ```bash
-npx -y paseo-agy-acp@2.5.0 --login
+npx -y paseo-agy-acp@2.5.1 --login
 ```
 
-第一次运行会下载并配置官方内核 1.2.1。下载约 320 MiB，放在 `~/.local/opt/`。
+第一次运行会下载并配置官方内核 1.3.0。下载约 320 MiB，放在 `~/.local/opt/`。
 
 OAuth 由官方内核完成。Token 保留在内核自己的状态中，本适配器不会打印。
 
@@ -121,7 +121,7 @@ OAuth 由官方内核完成。Token 保留在内核自己的状态中，本适�
 ```bash
 export AGY_ACP_STATE_DIR="$HOME/.local/state/paseo-agy-acp/account-name"
 install -d -m 700 "$AGY_ACP_STATE_DIR"
-npx -y --package=paseo-agy-acp@2.5.0 \
+npx -y --package=paseo-agy-acp@2.5.1 \
   agy-acp-prepare-state "$AGY_ACP_STATE_DIR"
 ```
 
@@ -140,7 +140,7 @@ provider id 是 `agents.providers` 下的键：
       "paseo-agy-acp": {
         "extends": "acp",
         "label": "Antigravity Pro",
-        "command": ["npx", "-y", "paseo-agy-acp@2.5.0"],
+        "command": ["npx", "-y", "paseo-agy-acp@2.5.1"],
         "env": {
           "AGY_ACP_ADMISSION_ENABLED": "true",
           "AGY_ACP_STATE_DIR": "/home/YOU/.local/state/paseo-agy-acp/account-name"

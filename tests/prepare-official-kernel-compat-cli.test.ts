@@ -98,14 +98,14 @@ describe("prepare official kernel compatibility CLI", () => {
       os.homedir(),
       ".local",
       "opt",
-      "agy-acp-server-1.2.1",
+      "agy-acp-server-1.3.0",
       "agy_acp_server.par"
     ));
     expect(observation.options.externalHarnessPath).toBe(path.join(
       os.homedir(),
       ".local",
       "opt",
-      "agy-acp-server-1.2.1",
+      "agy-acp-server-1.3.0",
       "localharness_external"
     ));
     expect(observation.compatibilityModule.mode).toBe(0o400);
@@ -114,8 +114,8 @@ describe("prepare official kernel compatibility CLI", () => {
     expect(observation.options.patchPlan.edits).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "rc01-model-selection-catalog",
-        find: "if not ccpa_id.startswith(\"gemini\"):",
-        replacement: "if not is_catalog_model(ccpa_id):"
+        find: "    if not allow_third_party and not ccpa_id.startswith(\n        _GEMINI_MODEL_ID_PREFIX\n    ):\n",
+        replacement: "    if not is_catalog_model(ccpa_id):\n"
       }),
       expect.objectContaining({
         id: "rc01-proxy-server-transform",
