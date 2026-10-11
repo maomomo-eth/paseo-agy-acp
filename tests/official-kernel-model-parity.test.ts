@@ -760,6 +760,40 @@ describe("official kernel model parity acceptance harness", () => {
       diagnostics: { failure: "timeout_not_confirmed" }
     });
   });
+
+  it("escalates to SIGKILL and still confirms process-group cleanup when a child ignores SIGTERM", async () => {
+    const fake = fakeWrapper();
+    const childPidPath = path.join(fake.root, "sigterm-trapping-child.pid");
+    const result = runHarness("--kernel", fake.target, [
+      "--live",
+      "--timeout",
+      "--model",
+      "claude-sonnet-4-6",
+      "--request-timeout-ms",
+      "150",
+      "--overall-timeout-ms",
+      "2000"
+    ], {
+      P4_FAKE_BEHAVIOR: "timeout-child",
+      P4_FAKE_CHILD_PID_FILE: childPidPath,
+      P4_FAKE_CHILD_TRAPS_SIGTERM: "1"
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.receipt).toMatchObject({
+      ok: true,
+      timeout: {
+        requested: true,
+        attempted: true,
+        status: "passed",
+        timedOut: true,
+        processGroupCleaned: true
+      },
+      coverage: { run: { processCleanup: "passed" } }
+    });
+    const childPid = Number(readFileSync(childPidPath, "utf8"));
+    expect(await waitForProcessExit(childPid)).toBe(true);
+  }, 20_000);
 });
 
 describe("isolated stress evidence", () => {

@@ -18,6 +18,7 @@ const MAX_NDJSON_LINE_BYTES = 1024 * 1024;
 const MAX_FINAL_MESSAGE_CHARS = 64 * 1024;
 const EXIT_GRACE_MS = 500;
 const TERMINATE_GRACE_MS = 1_500;
+const PROCESS_GROUP_POLL_MS = 25;
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SAFE_BUILD_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SAFE_ERROR_CODE = /^[A-Z][A-Z0-9_.-]{0,63}$/;
@@ -39,7 +40,17 @@ class HarnessError extends Error {
 }
 
 function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+function waitForExitOrGrace(exitPromise, milliseconds) {
+  let timer;
+  const grace = new Promise((resolve) => {
+    timer = setTimeout(resolve, milliseconds);
+  });
+  return Promise.race([exitPromise, grace]).finally(() => clearTimeout(timer));
 }
 
 function boundedInteger(value, label, minimum, maximum) {
@@ -683,6 +694,15 @@ class NdjsonKernelClient {
     }
   }
 
+  async waitForProcessGroupExit(timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (this.processGroupAlive()) {
+      if (Date.now() >= deadline) return false;
+      await sleep(PROCESS_GROUP_POLL_MS);
+    }
+    return true;
+  }
+
   async close(requireProcessGroupCleanup = false) {
     if (this.closed) {
       return { attempted: requireProcessGroupCleanup, confirmed: !this.processGroupAlive() };
@@ -694,10 +714,10 @@ class NdjsonKernelClient {
     }
     if (requireProcessGroupCleanup) {
       this.kill("SIGTERM");
-      await Promise.race([this.exitPromise, sleep(TERMINATE_GRACE_MS)]);
-      if (this.processGroupAlive()) {
+      const terminated = await this.waitForProcessGroupExit(TERMINATE_GRACE_MS);
+      if (!terminated) {
         this.kill("SIGKILL");
-        await Promise.race([this.exitPromise, sleep(EXIT_GRACE_MS)]);
+        await this.waitForProcessGroupExit(EXIT_GRACE_MS);
       }
       return { attempted: true, confirmed: !this.processGroupAlive() };
     }
@@ -706,13 +726,13 @@ class NdjsonKernelClient {
     } catch {
       // Process termination below remains authoritative.
     }
-    await Promise.race([this.exitPromise, sleep(EXIT_GRACE_MS)]);
+    await waitForExitOrGrace(this.exitPromise, EXIT_GRACE_MS);
     if (child.exitCode === null && child.signalCode === null) {
       this.kill("SIGTERM");
-      await Promise.race([this.exitPromise, sleep(TERMINATE_GRACE_MS)]);
+      await waitForExitOrGrace(this.exitPromise, TERMINATE_GRACE_MS);
     }
     if (child.exitCode === null && child.signalCode === null) this.kill("SIGKILL");
-    await Promise.race([this.exitPromise, sleep(EXIT_GRACE_MS)]);
+    await waitForExitOrGrace(this.exitPromise, EXIT_GRACE_MS);
     return { attempted: false, confirmed: null };
   }
 

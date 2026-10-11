@@ -113,7 +113,11 @@ function toolMarker(text) {
 }
 
 function spawnHangingChild() {
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  const script =
+    process.env.P4_FAKE_CHILD_TRAPS_SIGTERM === "1"
+      ? "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"
+      : "setInterval(() => {}, 1000)";
+  const child = spawn(process.execPath, ["-e", script], { stdio: "ignore" });
   if (process.env.P4_FAKE_CHILD_PID_FILE !== undefined && child.pid !== undefined) {
     writeFileSync(process.env.P4_FAKE_CHILD_PID_FILE, String(child.pid), "utf8");
   }

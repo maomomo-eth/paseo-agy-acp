@@ -27,9 +27,20 @@ All notable changes to `paseo-agy-acp` are recorded here.
   `provider: "antigravity"`, the ACP identity stays `agy-acp`, and the npm
   keyword stays `antigravity`.
 
+### Fixed
+
+- The model-parity acceptance harness now waits for the whole process group
+  to disappear within the existing SIGTERM/SIGKILL grace budgets before it
+  claims process-group cleanup, instead of trusting the direct child's exit
+  event. Under CPU load the spawned grandchild could still be alive or
+  unreaped at that instant, which made `process_cleanup_unconfirmed`
+  intermittent in CI. Race timers are also cleared once they are settled, so
+  the harness process no longer sits idle for up to a grace period after a
+  run finishes.
+
 ### Verification
 
-- Complete validation: 43 test files, 257 passed, 1 skipped; architecture and
+- Complete validation: 43 test files, 258 passed, 1 skipped; architecture and
   secret checks passed.
 - Local lifecycle `prepare`/`verify` against the downloaded 1.3.0 Linux x86_64
   archive succeeded for artifact
