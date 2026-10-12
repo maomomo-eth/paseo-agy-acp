@@ -18,6 +18,8 @@ Since v0.11.0, Paseo includes a built-in Antigravity provider. `paseo-agy-acp`
 coexists with it as an independent provider, so Paseo can sign in two
 Antigravity Pro accounts and dispatch everyday work to different accounts.
 
+<img src="./docs/images/antigravity-and-antigravity-pro.png" alt="Antigravity and Antigravity Pro both available in Paseo" width="640">
+
 The settings list shows the display name. Use the provider id in `config.json`
 and when creating an agent.
 
@@ -27,8 +29,6 @@ and when creating an agent.
 | Provider id | `paseo-agy-acp` | `antigravity` |
 | Process | official ACP kernel `agy_acp_server` | host `agy`, resolved from `PATH` |
 | Login | `~/.gemini/antigravity-acp` | `~/.gemini/antigravity-cli` |
-
-<img src="./docs/images/antigravity-and-antigravity-pro.png" alt="Antigravity and Antigravity Pro both available in Paseo" width="720">
 
 <!-- readme:positioning -->
 ## What this product is
