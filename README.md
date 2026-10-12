@@ -2,7 +2,7 @@
 
 # paseo-agy-acp
 
-**Reliable Paseo adapter for Google's official Antigravity ACP kernel**
+**Coexist with Paseo's built-in Antigravity and sign in two Antigravity Pro accounts**
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-2.5.1-blue?style=flat-square)](./package.json)
@@ -13,6 +13,24 @@
 [English](./README.md) | [中文](./README.zh-CN.md) | [Changelog](./CHANGELOG.md)
 
 </div>
+
+Since v0.11.0, Paseo includes a built-in Antigravity provider. `paseo-agy-acp`
+coexists with it as an independent provider, so Paseo can sign in two
+Antigravity Pro accounts and dispatch everyday work to different accounts.
+
+![Antigravity and Antigravity Pro both available in Paseo](./docs/images/antigravity-and-antigravity-pro.png)
+
+The settings list shows the display name. Use the provider id in `config.json`
+and when creating an agent.
+
+- **Antigravity Pro** (this adapter)
+  - provider id: `paseo-agy-acp`
+  - process: official ACP kernel `agy_acp_server`
+  - login: `~/.gemini/antigravity-acp`
+- **Antigravity** (built into Paseo)
+  - provider id: `antigravity`
+  - process: host `agy`, resolved from `PATH`
+  - login: `~/.gemini/antigravity-cli`
 
 <!-- readme:positioning -->
 ## What this product is
@@ -102,7 +120,7 @@ Paseo agents.
 <!-- readme:requirements -->
 ## Requirements
 
-- **Paseo** v0.11.2 or newer with custom ACP provider support
+- **Paseo** v0.11.0 or newer with custom ACP provider support
 - **Node.js 22 or newer**
 - An Antigravity account able to complete official `oauth-personal`
 - Linux filesystem ownership and mode support when Admission is enabled
@@ -166,35 +184,22 @@ Add or update the provider in `$PASEO_HOME/config.json` or
 }
 ```
 
-Paseo v0.11.2 requires `extends: "acp"` and a `label` for a custom ACP
-provider. Provider ids must match `^[a-z][a-z0-9-]*$`; `paseo-agy-acp` does.
+A custom ACP provider needs `extends: "acp"` and a `label`. Provider ids must
+match `^[a-z][a-z0-9-]*$`; `paseo-agy-acp` does.
 
 Paseo supplies `PASEO_AGENT_ID` and `PASEO_AGENT_CWD` to the provider process.
 Omit the two Admission variables only when you intentionally want unfenced
 single-agent operation.
 
-#### Coexistence with Paseo's built-in agy provider
+#### Coexistence with Paseo's built-in Antigravity
 
-Paseo v0.11.2 added its own built-in Antigravity provider. The two providers
-are separate programs:
+Display names, provider ids, login directories, and the screenshot are at the
+top of this README. In the JSON above, the key is `paseo-agy-acp` and `label`
+is `Antigravity Pro`.
 
-- Paseo's built-in agy provider (id `antigravity`, display name **Antigravity**)
-  starts the host `agy` CLI (resolved from `PATH`). Its login lives in
-  `~/.gemini/antigravity-cli`.
-- `paseo-agy-acp` (id `paseo-agy-acp`, display name **Antigravity Pro**) does
-  not start that `agy` CLI. It starts `agy-acp`, which runs the official ACP
-  kernel `agy_acp_server`. Its login lives in `~/.gemini/antigravity-acp`.
-
-Both can be enabled at the same time: Paseo's built-in provider runs its `agy`
-processes, and this adapter runs its `agy_acp_server` processes. Because the
-logins are separate, they can be signed into two Antigravity accounts, so each
-account's Gemini Pro quota can be used at the same time. The adapter's
-Admission queue only limits `agy_acp_server`; it does not limit the built-in
-provider's `agy` processes.
-
-Existing users who configured this adapter under the key `antigravity` must
-rename that key to `paseo-agy-acp`. While the old key remains, Paseo hides the
-built-in agy provider and routes the id `antigravity` to this adapter.
+If an existing config still uses the key `antigravity` for this adapter, rename
+it to `paseo-agy-acp`. While the old key remains, Paseo hides the built-in
+Antigravity provider and routes the id `antigravity` to this adapter.
 
 ### 4. Restart and verify
 
