@@ -20,16 +20,14 @@ provider 和它共存，Paseo 就可以同时登录两个 Antigravity Pro 账号
 
 ![Paseo 中 Antigravity 与 Antigravity Pro 同时可用](./docs/images/antigravity-and-antigravity-pro.png)
 
-设置列表里看到的是显示名。写 `config.json`、创建 agent 时填写 provider id。
+设置列表里看到的是显示名称。写 `config.json`、创建 agent 时填写 provider id。
 
-- **Antigravity Pro**（本适配器）
-  - provider id：`paseo-agy-acp`
-  - 进程：官方 ACP 内核 `agy_acp_server`
-  - 登录：`~/.gemini/antigravity-acp`
-- **Antigravity**（Paseo 内置）
-  - provider id：`antigravity`
-  - 进程：宿主机 `agy`（从 `PATH` 查找）
-  - 登录：`~/.gemini/antigravity-cli`
+| | **Antigravity Pro**（本适配器） | **Antigravity**（Paseo 内置） |
+|---|---|---|
+| 显示名称 | Antigravity Pro | Antigravity |
+| provider id | `paseo-agy-acp` | `antigravity` |
+| 进程 | 官方 ACP 内核 `agy_acp_server` | 宿主机 `agy`（从 `PATH` 查找） |
+| 登录 | `~/.gemini/antigravity-acp` | `~/.gemini/antigravity-cli` |
 
 <!-- readme:positioning -->
 ## 这个产品是什么

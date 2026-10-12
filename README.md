@@ -23,14 +23,12 @@ Antigravity Pro accounts and dispatch everyday work to different accounts.
 The settings list shows the display name. Use the provider id in `config.json`
 and when creating an agent.
 
-- **Antigravity Pro** (this adapter)
-  - provider id: `paseo-agy-acp`
-  - process: official ACP kernel `agy_acp_server`
-  - login: `~/.gemini/antigravity-acp`
-- **Antigravity** (built into Paseo)
-  - provider id: `antigravity`
-  - process: host `agy`, resolved from `PATH`
-  - login: `~/.gemini/antigravity-cli`
+| | **Antigravity Pro** (this adapter) | **Antigravity** (built into Paseo) |
+|---|---|---|
+| Display name | Antigravity Pro | Antigravity |
+| Provider id | `paseo-agy-acp` | `antigravity` |
+| Process | official ACP kernel `agy_acp_server` | host `agy`, resolved from `PATH` |
+| Login | `~/.gemini/antigravity-acp` | `~/.gemini/antigravity-cli` |
 
 <!-- readme:positioning -->
 ## What this product is
