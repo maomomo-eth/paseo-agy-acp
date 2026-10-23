@@ -21,8 +21,7 @@ export async function runOfficialLogin(
   process.stderr.write(
     "Starting official Antigravity ACP login (authenticate methodId=oauth-personal).\n"
   );
-  // The official kernel prints the OAuth URL as ordinary stdout text. Its
-  // stdout is a pipe here, so force Python to flush that prompt immediately.
+  // 旧内核在 stdout 输出授权链接，1.3.0 改用 stderr；两者都需及时刷新。
   const binary = await ensureManagedOfficialKernel(environment);
   const child = spawnOfficialKernel({ ...environment, PYTHONUNBUFFERED: "1", PASEO_AGY_ACP_OFFICIAL_BIN: binary });
   const pending = new Map<JsonRpcId, (message: JsonRpcMessage) => void>();
@@ -30,6 +29,18 @@ export async function runOfficialLogin(
   let authenticationStarted = false;
   let promptCallback: Promise<void> | undefined;
   let rejectLogin: ((reason?: unknown) => void) | undefined;
+
+  const showLoginOutput = (line: string): void => {
+    process.stderr.write(`${formatLoginOutput(line)}\n`);
+    // stderr 中其他日志可能也有 URL，只识别授权提示或旧版独占一行的链接。
+    const isAuthorizationPrompt = line.startsWith("Open the following link to authenticate the ACP server:") ||
+      /^https?:\/\/\S+$/.test(line.trim());
+    if (authenticationStarted && !promptCallback && isAuthorizationPrompt && extractUrl(line)) {
+      promptCallback = promptForCallbackUrl(input)
+        .then(deliverOAuthCallback)
+        .catch((error) => rejectLogin?.(error));
+    }
+  };
 
   const parse = createNdjsonParser(
     (message) => {
@@ -44,16 +55,13 @@ export async function runOfficialLogin(
         settle?.(message);
       }
     },
-    (line) => {
-      process.stderr.write(`${formatLoginOutput(line)}\n`);
-      if (authenticationStarted && !promptCallback && extractUrl(line)) {
-        promptCallback = promptForCallbackUrl(input)
-          .then(deliverOAuthCallback)
-          .catch((error) => rejectLogin?.(error));
-      }
-    }
+    showLoginOutput
   );
   child.stdout.on("data", parse);
+  // spawn 默认直通 stderr；登录时改为逐行处理，兼容分块并避免重复输出。
+  child.stderr.unpipe(process.stderr);
+  const stderrLines = createInterface({ input: child.stderr, crlfDelay: Infinity });
+  stderrLines.on("line", showLoginOutput);
 
   const request = (method: string, params: unknown): Promise<JsonRpcMessage> => {
     const id = nextId++;
@@ -99,6 +107,7 @@ export async function runOfficialLogin(
     process.stderr.write(`${message}\n`);
     return 1;
   } finally {
+    stderrLines.close();
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
     }
