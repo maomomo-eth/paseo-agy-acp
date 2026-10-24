@@ -2,6 +2,16 @@
 
 All notable changes to `paseo-agy-acp` are recorded here.
 
+## 2.6.0 - 2026-10-24
+
+### Changed
+
+- Update the supported Paseo integration references to v0.12.0.
+- Adapt the managed official Antigravity ACP runtime to Registry antigravity-acp 1.4.3. Downloads now use the 1.4.3 platform archives and registry SHA-256 checksums, with managed paths under ~/.local/opt/agy-acp-server-1.4.3.
+- Re-pin the opt-in Linux compatibility lifecycle to the verified 1.4.3 PAR, harness, and runfiles source hashes. The existing model catalog compatibility patch and PR #17 request transform remain required because the 1.4.3 source still has the same third-party gate and byte-identical proxy source.
+- Revalidated ACP protocol negotiation, session/list, session/resume, model/thinking_level configuration, Linux --uid= startup, and EOF shutdown against the official 1.4.3 kernel.
+
+
 ## 2.5.1 - 2026-10-11
 
 ### Changed

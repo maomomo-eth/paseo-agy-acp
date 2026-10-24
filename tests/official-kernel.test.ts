@@ -26,7 +26,7 @@ import { mapToOfficialModeId, rewriteModeFields } from "../ACP Connector/officia
 import { createNdjsonParser, encodeNdjson } from "../ACP Connector/official-kernel/ndjson.js";
 import { OfficialKernelProxy } from "../ACP Connector/official-kernel/proxy.js";
 import { runOfficialLogin } from "../ACP Connector/official-kernel/login.js";
-import { officialKernelDownload, usesManagedOfficialKernel } from "../ACP Connector/official-kernel/ensure-managed-kernel.js";
+import { officialKernelDownload, managedOfficialKernelRoot, usesManagedOfficialKernel } from "../ACP Connector/official-kernel/ensure-managed-kernel.js";
 import { officialSpawnArgs, resolveOfficialBinary } from "../ACP Connector/official-kernel/spawn.js";
 import { PASEO_DAEMON_CONTEXT_OPEN } from "../ACP Connector/acp/session/paseo-context.js";
 import type { JsonRpcMessage } from "../ACP Connector/official-kernel/json-rpc.js";
@@ -87,17 +87,36 @@ describe("official kernel selection", () => {
     expect(officialSpawnArgs(fakeOfficialAgent, "linux")).toEqual([]);
     expect(officialSpawnArgs(fakeOfficialAgent, "darwin")).toEqual([]);
     expect(resolveOfficialBinary({ PASEO_AGY_ACP_OFFICIAL_BIN: fakeOfficialAgent })).toBe(fakeOfficialAgent);
+    expect(managedOfficialKernelRoot("/home/user")).toBe("/home/user/.local/opt/agy-acp-server-1.4.3");
     expect(usesManagedOfficialKernel(undefined, "/home/user")).toBe(true);
     expect(usesManagedOfficialKernel("", "/home/user")).toBe(true);
     expect(usesManagedOfficialKernel("/home/user/.local/opt/paseo-agy-acp-kernel-compat/agy-acp-kernel-compat-active", "/home/user")).toBe(true);
     expect(usesManagedOfficialKernel("/home/user/.local/opt/agy-acp-server-agy_acp_server_20260818_01_RC01/agy-acp-server-canary", "/home/user")).toBe(true);
     expect(usesManagedOfficialKernel(fakeOfficialAgent, "/home/user")).toBe(false);
-    expect(officialKernelDownload("linux", "x64").url).toContain("linux-x86_64.zip");
-    expect(officialKernelDownload("linux", "arm64").url).toContain("linux-arm64.zip");
-    expect(officialKernelDownload("darwin", "arm64").url).toContain("darwin-arm64.zip");
-    expect(officialKernelDownload("darwin", "x64").url).toContain("darwin-x86_64.zip");
-    expect(officialKernelDownload("win32", "x64").binaryName).toBe("agy_acp_server.exe");
-    expect(officialKernelDownload("win32", "arm64").url).toContain("windows-arm64.zip");
+    expect(officialKernelDownload("linux", "x64")).toMatchObject({
+      url: expect.stringContaining("agy-acp-server-1.4.3-linux-x86_64.zip"),
+      sha256: "0634ce5306ba92c932945455e7a83fda78e2d99c33fa8aa6ee0566206a382714"
+    });
+    expect(officialKernelDownload("linux", "arm64")).toMatchObject({
+      url: expect.stringContaining("agy-acp-server-1.4.3-linux-arm64.zip"),
+      sha256: "05c153443b0b1175151c760eeddea538950bc9843e317d54786a1f03670182bc"
+    });
+    expect(officialKernelDownload("darwin", "arm64")).toMatchObject({
+      url: expect.stringContaining("agy-acp-server-1.4.3-darwin-arm64.zip"),
+      sha256: "c57db0a9b8b712daa9c3c17cdb990a61842ea569f279e8bd79d7aa85a303b20b"
+    });
+    expect(officialKernelDownload("darwin", "x64")).toMatchObject({
+      url: expect.stringContaining("agy-acp-server-1.4.3-darwin-x86_64.zip"),
+      sha256: "9392dbbdad7f0663dbfb5a0bf641297b0cf80d2ee9cd2d49a616bbbc7378731d"
+    });
+    expect(officialKernelDownload("win32", "x64")).toMatchObject({
+      binaryName: "agy_acp_server.exe",
+      sha256: "54c2e16378d9a4952e1da70e355f3c33c4f284308d6de48ab3e6e34a127bd325"
+    });
+    expect(officialKernelDownload("win32", "arm64")).toMatchObject({
+      url: expect.stringContaining("agy-acp-server-1.4.3-windows-arm64.zip"),
+      sha256: "fcd46431ad33d3b510ce0b98fe7b43d095bd8b3f1c363ee2d57faa7ee981c7bb"
+    });
     expect(officialKernelDownload("linux", "x64").compat).toBe(true);
     expect(officialKernelDownload("darwin", "arm64").compat).toBe(false);
   });
@@ -204,10 +223,10 @@ describe("official kernel adapters", () => {
   it("overlays product identity onto the official initialize payload", () => {
     const overlaid = overlayProductIdentity(
       { protocolVersion: 1, agentInfo: { name: "antigravity-acp", version: "rc01" } },
-      "2.5.1"
+      "2.6.0"
     );
     expect(overlaid).toMatchObject({
-      agentInfo: { name: PRODUCT_AGENT_NAME, version: "2.5.1" }
+      agentInfo: { name: PRODUCT_AGENT_NAME, version: "2.6.0" }
     });
   });
 
@@ -283,7 +302,7 @@ describe("official kernel proxy", () => {
       stdin,
       stdout,
       env,
-      version: "2.5.1"
+      version: "2.6.0"
     });
     const started = proxy.start();
     const collected = collect(stdout);
@@ -317,7 +336,7 @@ describe("official kernel proxy", () => {
         send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1 } });
         const initialized = await waitFor((message) => "id" in message && message.id === 1);
         expect(initialized).toMatchObject({
-          result: { agentInfo: { name: "agy-acp", version: "2.5.1" } }
+          result: { agentInfo: { name: "agy-acp", version: "2.6.0" } }
         });
 
         send({
@@ -584,7 +603,7 @@ describe("official kernel proxy", () => {
       );
       const initialized = await collected.waitFor((message) => "id" in message && message.id === 1);
       expect(initialized).toMatchObject({
-        result: { agentInfo: { name: "agy-acp", version: "2.5.1" } }
+        result: { agentInfo: { name: "agy-acp", version: "2.6.0" } }
       });
     } finally {
       child.stdin.end();

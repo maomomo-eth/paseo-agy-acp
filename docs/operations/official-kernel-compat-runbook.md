@@ -1,7 +1,7 @@
 # Official Kernel Local Compatibility Runbook
 
 ## Overview
-This runbook provides precise operations for applying the local-only 1.3.0 compatibility layer for the official Antigravity ACP kernel. This lifecycle enables discovering and operating non-Gemini models (e.g., Claude 4.6, GPT-OSS 120B) via precise local request compatibility transforms, without redistributing Google proprietary artifacts or overriding upstream backend controls.
+This runbook provides precise operations for applying the local-only 1.4.3 compatibility layer for the official Antigravity ACP kernel. This lifecycle enables discovering and operating non-Gemini models (e.g., Claude 4.6, GPT-OSS 120B) via precise local request compatibility transforms, without redistributing Google proprietary artifacts or overriding upstream backend controls.
 
 > [!WARNING]
 > **Boundary & ToS**: This is an explicitly **opt-in**, **local-only** operation applied by the host operator. It is **not** an official Google fix or distribution. Neither modified binaries nor runfiles may be uploaded, published, or distributed.
@@ -9,17 +9,18 @@ This runbook provides precise operations for applying the local-only 1.3.0 compa
 ## Prerequisites and Strict Pins
 
 - **Node/Build Requirement**: A Node.js environment is required, and `npm run build` must have been executed successfully against this working directory before proceeding.
-- **Disk Headroom**: The observed engineered footprint requires ~3 GiB for this 1.3.0 temp artifact. Operators must enforce a conservative >=6 GiB free headroom check (which is filesystem-dependent) before staging.
+- **Disk Headroom**: The observed engineered footprint requires ~3 GiB for this 1.4.3 temp artifact. Operators must enforce a conservative >=6 GiB free headroom check (which is filesystem-dependent) before staging.
 
-This compatibility lifecycle is strictly pinned to official antigravity-acp 1.3.0. Any hash mismatch enforces a **fail-closed** policy out of caution (stale official hash refusal on updates).
+This compatibility lifecycle is strictly pinned to official antigravity-acp 1.4.3. Any hash mismatch enforces a **fail-closed** policy out of caution (stale official hash refusal on updates).
 
 | Artifact | Expected SHA-256 |
 | -------- | ---------------- |
-| `agy_acp_server.par` | `cf6feaebdacfc2255dcfc8883db99b15de8554698554e2a1e78e5ccec1c68a20` |
-| `localharness_external` | `63042ca43fc7a69600683920f7706689b82cf8aecefe21dc18cf35e99c9dde4d` |
-| `model_selection.py` (preimage) | `0c0ea7564fde8d66f9a789838d6542c6ae2da18710f557ebc30975200e39656b` |
+| agy-acp-server-1.4.3-linux-x86_64.zip (Registry archive) | 0634ce5306ba92c932945455e7a83fda78e2d99c33fa8aa6ee0566206a382714 |
+| `agy_acp_server.par` | `7e06ec4aab6dcff53911a16c124692bc95c8848b2a1fd3220be6f67dbe7efafb` |
+| `localharness_external` | `55b2d1d8206d3f38353cdba3c5c5d087cd718241b90500bce4f8009f64495285` |
+| `model_selection.py` (preimage) | `1c3792bd3f8983052364f1600964a17dcfef3b624679441616445c464dcdef85` |
 | `ccpa_connection/proxy_server.py` (preimage) | `e350a8c7bef2d9e3616c6980774527d100137275bec5da147781e87f587012de` |
-| `server.py` (unmodified) | `4b2171c74c116346260a9aa24e5372190bf0ad66cad8acebc350e89203157fe3` |
+| `server.py` (unmodified) | `5a51fe07811386fed8e31b2de36137beac76796a3b78272f14b226f310bd2c3b` |
 
 ## Disk and Permission Expectations
 
