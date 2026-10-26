@@ -99,6 +99,27 @@ description: default
 });
 
 describe("Skill Commands Discovery", () => {
+  it("发现 Paseo 工作区、默认 home 和自定义 home 技能，并保持工作区优先", () => {
+    const ws = tempDir("ws-paseo-");
+    const home = tempDir("home-paseo-");
+    const paseoHome = tempDir("custom-paseo-");
+    const roots = [path.join(ws, ".paseo/skills"), path.join(paseoHome, "skills"), path.join(home, ".paseo/skills")];
+    for (const [index, root] of roots.entries()) {
+      for (const name of [`paseo-${index}`, "shared-paseo"]) {
+        const dir = path.join(root, name);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: 来源 ${index}\n---\n`, "utf8");
+      }
+    }
+    const env = { HOME: home, PASEO_HOME: paseoHome };
+    expect(resolveSkillRoots(ws, env)).toEqual(expect.arrayContaining(roots));
+    const commands = augmentAvailableCommands([{ name: "plan", description: "内核命令" }], ws, env);
+    expect(commands).toEqual(expect.arrayContaining(roots.map((_, index) => ({ name: `paseo-${index}`, description: `来源 ${index}` }))));
+    expect(commands.filter(command => command.name === "shared-paseo")).toEqual([{ name: "shared-paseo", description: "来源 0" }]);
+    expect(resolveSkillRoots(undefined, { HOME: home })).toEqual([path.join(home, ".paseo/skills")]);
+    expect(resolveSkillRoots(undefined, { HOME: home, PASEO_HOME: path.join(home, ".paseo") })).toHaveLength(1);
+  });
+
   it("discovers skills from configured skills.json", () => {
     const ws = tempDir("ws-custom-");
     const customSkillDir = tempDir("custom-skill-target-");
@@ -227,4 +248,3 @@ description: Default location skill
     );
   });
 });
-

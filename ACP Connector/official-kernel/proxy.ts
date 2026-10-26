@@ -10,12 +10,13 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcSuccess,
+  isRecord,
   jsonRpcError,
   type JsonRpcId,
   type JsonRpcMessage,
   type JsonRpcRequest
 } from "./json-rpc.js";
-import { bridgeOfficialMcpServers } from "./mcp-protocol-bridge.js";
+import { bridgeOfficialMcpServers, McpProtocolBridge } from "./mcp-protocol-bridge.js";
 import { rewriteMcpServers } from "./mcp-rewrite.js";
 import { rewriteModeFields } from "./mode-map.js";
 import { createNdjsonParser, encodeNdjson } from "./ndjson.js";
@@ -59,6 +60,8 @@ export class OfficialKernelProxy {
   readonly #systemMessageFolder = new SystemMessageFolder();
   readonly #env: NodeJS.ProcessEnv;
   readonly #admission;
+  readonly #mcpBridge = new McpProtocolBridge();
+  readonly #inFlight = new Set<Promise<void>>();
   #sessionNewTail: Promise<void> = Promise.resolve();
   #closed = false;
 
@@ -73,7 +76,9 @@ export class OfficialKernelProxy {
 
   start(): Promise<void> {
     const parseClient = createNdjsonParser((message) => {
-      void this.#onClientMessage(message);
+      const task = this.#onClientMessage(message);
+      this.#inFlight.add(task);
+      void task.then(() => this.#inFlight.delete(task), () => this.#inFlight.delete(task));
     });
     const parseChild = createNdjsonParser((message) => {
       this.#onChildMessage(message);
@@ -81,26 +86,50 @@ export class OfficialKernelProxy {
 
     this.#stdin.on("data", parseClient);
     this.#child.stdout.on("data", parseChild);
-    this.#stdin.on("end", () => this.#child.stdin.end());
+    const endInput = () => this.#child.stdin.end();
+    this.#stdin.on("end", endInput);
 
     return new Promise((resolve, reject) => {
-      const finish = () => {
+      const finish = (error?: Error) => {
         if (this.#closed) return;
         this.#closed = true;
-        this.#admission?.coordinator.close();
-        this.#admission?.runtime.close();
-        resolve();
+        this.#child.off("error", finish);
+        this.#child.off("close", onClose);
+        this.#stdin.off("data", parseClient);
+        this.#stdin.off("end", endInput);
+        this.#child.stdout.off("data", parseChild);
+        for (const claim of this.#claims.values()) claim.abort();
+        for (const [id, pending] of this.#pending) {
+          pending.resolve(jsonRpcError(id, "official kernel connection closed"));
+        }
+        this.#pending.clear();
+        void (async () => {
+          try {
+            await this.#mcpBridge.close();
+            await Promise.allSettled(this.#inFlight);
+          } finally {
+            this.#admission?.coordinator.close();
+            this.#admission?.runtime.close();
+            this.#claims.clear();
+            this.#sessionCwds.clear();
+          }
+          if (error) throw error;
+        })().then(resolve, reject);
       };
-      this.#child.once("error", reject);
-      this.#child.once("exit", finish);
+      const onClose = () => finish();
+      this.#child.once("error", finish);
+      // close 在 stdio 排空后触发，避免 exit 时丢失最后一条内核响应。
+      this.#child.once("close", onClose);
     });
   }
 
   #writeClient(message: JsonRpcMessage): void {
+    if (this.#closed) return;
     this.#stdout.write(encodeNdjson(message));
   }
 
   #writeChild(message: JsonRpcMessage): void {
+    if (this.#closed) throw new Error("official kernel connection closed");
     this.#child.stdin.write(encodeNdjson(message));
   }
 
@@ -137,17 +166,22 @@ export class OfficialKernelProxy {
 
   async #onClientRequest(request: JsonRpcRequest): Promise<void> {
     let params = request.params;
+    if (request.method === SESSION_NEW_METHOD || request.method === SESSION_LOAD_METHOD || request.method === SESSION_RESUME_METHOD) {
+      const cwd = extractCwd(params, this.#env);
+      if (cwd && isRecord(params)) params = { ...params, cwd };
+      else if (cwd && params === undefined) params = { cwd };
+    }
     if (request.method === SESSION_NEW_METHOD) {
-      params = await bridgeOfficialMcpServers(rewriteMcpServers(rewriteModeFields(params)));
+      params = await bridgeOfficialMcpServers(rewriteMcpServers(rewriteModeFields(params)), this.#mcpBridge);
       await this.#forwardSessionNew(request, params);
       return;
     } else if (
       request.method === SESSION_LOAD_METHOD ||
       request.method === SESSION_RESUME_METHOD
     ) {
-      params = await bridgeOfficialMcpServers(rewriteMcpServers(params));
+      params = await bridgeOfficialMcpServers(rewriteMcpServers(params), this.#mcpBridge);
       const sessionId = extractSessionId(params);
-      const cwd = extractCwd(params);
+      const cwd = extractCwd(params, this.#env);
       if (sessionId && cwd) {
         this.#sessionCwds.set(sessionId, cwd);
       }
@@ -182,6 +216,7 @@ export class OfficialKernelProxy {
   }
 
   async #handlePrompt(request: JsonRpcRequest, params: unknown): Promise<void> {
+    if (this.#closed) return;
     const sessionId = extractSessionId(params);
     const promptText = extractPromptText(params) || "prompt";
     const rewritten: JsonRpcRequest = { ...request, jsonrpc: "2.0", params };
@@ -203,6 +238,22 @@ export class OfficialKernelProxy {
         model: "official",
         promptText,
         claim,
+        reportProgress: (progress) => {
+          if (!sessionId || claim.aborted) return;
+          const waitedSeconds = Math.floor(progress.waitedMs / 1_000);
+          const cooldown = progress.cooldownUntil === null ? "" : "，正在等待服务冷却";
+          this.#writeClient({
+            jsonrpc: "2.0",
+            method: SESSION_UPDATE_METHOD,
+            params: {
+              sessionId,
+              update: {
+                sessionUpdate: "agent_thought_chunk",
+                content: { type: "text", text: `请求排队中：队列第 ${progress.position} 位，已等待 ${waitedSeconds} 秒${cooldown}。\n` }
+              }
+            }
+          });
+        },
         execute: async (boundary) => {
           const response = this.#track(rewritten.id, rewritten.method, params);
           issueAdmittedOfficialPromptWrite(boundary, processId, () => {
@@ -210,6 +261,8 @@ export class OfficialKernelProxy {
             this.#writeChild(rewritten);
           });
           await response;
+          // 断连只用于解开等待；已派发轮次仍交给 Admission 的恢复路径结算。
+          if (this.#closed) throw new Error("official kernel connection closed during prompt");
           return { stopReason: claim.aborted ? "cancelled" : "end_turn" };
         }
       });
@@ -226,11 +279,12 @@ export class OfficialKernelProxy {
   }
 
   #track(id: JsonRpcId, method: string, params: unknown): Promise<JsonRpcMessage> {
+    if (this.#closed) return Promise.resolve(jsonRpcError(id, "official kernel connection closed"));
     return new Promise((resolve) => {
       this.#pending.set(id, {
         method,
         sessionId: extractSessionId(params),
-        cwd: extractCwd(params),
+        cwd: extractCwd(params, this.#env),
         sawVisibleOutput: false,
         resolve
       });
@@ -275,7 +329,7 @@ export class OfficialKernelProxy {
             }
           }
         }
-        const augmented = augmentAvailableCommands(params.update.availableCommands, cwd);
+        const augmented = augmentAvailableCommands(params.update.availableCommands, cwd, this.#env);
         message = {
           ...message,
           params: {

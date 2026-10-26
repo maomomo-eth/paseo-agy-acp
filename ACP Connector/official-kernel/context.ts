@@ -49,10 +49,10 @@ export function extractSessionId(params: unknown): string | undefined {
       : undefined;
 }
 
-export function extractCwd(params: unknown): string | undefined {
-  if (!isRecord(params)) return undefined;
-  return typeof params.cwd === "string" && params.cwd.trim().length > 0
-    ? params.cwd.trim()
-    : undefined;
+export function extractCwd(
+  params: unknown,
+  environment: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  const cwd = isRecord(params) && typeof params.cwd === "string" ? params.cwd.trim() : "";
+  return cwd || environment.PASEO_AGENT_CWD?.trim() || undefined;
 }
-

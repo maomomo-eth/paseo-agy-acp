@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { resolvePaseoHome } from "../acp/session/paseo-context.js";
 
 export interface AvailableCommand {
   name: string;
@@ -104,9 +105,9 @@ export function parseFrontmatter(content: string): {
   return { name, description, userInvocable };
 }
 
-export function resolveSkillRoots(cwd?: string): string[] {
+export function resolveSkillRoots(cwd?: string, environment: NodeJS.ProcessEnv = process.env): string[] {
   const roots = new Set<string>();
-  const home = homedir();
+  const home = environment.HOME || homedir();
 
   const readSkillsJson = (filePath: string, baseDir: string): void => {
     if (!existsSync(filePath)) return;
@@ -148,6 +149,7 @@ export function resolveSkillRoots(cwd?: string): string[] {
   // 2. Workspace default skill directories
   if (cwd && existsSync(cwd)) {
     const wsDefaults = [
+      path.join(cwd, ".paseo/skills"),
       path.join(cwd, ".agents/skills"),
       path.join(cwd, ".codex/skills"),
       path.join(cwd, "skills")
@@ -164,6 +166,8 @@ export function resolveSkillRoots(cwd?: string): string[] {
 
   // 4. Global default skill directories
   const globalDefaults = [
+    path.join(resolvePaseoHome(environment), "skills"),
+    path.join(home, ".paseo/skills"),
     path.join(home, ".gemini/config/skills"),
     path.join(home, ".agents/skills"),
     path.join(home, ".codex/skills")
@@ -175,8 +179,8 @@ export function resolveSkillRoots(cwd?: string): string[] {
   return Array.from(roots);
 }
 
-export function discoverSkillCommands(cwd?: string): AvailableCommand[] {
-  const roots = resolveSkillRoots(cwd);
+export function discoverSkillCommands(cwd?: string, environment: NodeJS.ProcessEnv = process.env): AvailableCommand[] {
+  const roots = resolveSkillRoots(cwd, environment);
   const commands = new Map<string, AvailableCommand>();
 
   for (const root of roots) {
@@ -219,7 +223,8 @@ export function discoverSkillCommands(cwd?: string): AvailableCommand[] {
 
 export function augmentAvailableCommands(
   existingCommands: AvailableCommand[] | undefined,
-  cwd?: string
+  cwd?: string,
+  environment: NodeJS.ProcessEnv = process.env
 ): AvailableCommand[] {
   const result = new Map<string, AvailableCommand>();
 
@@ -231,7 +236,7 @@ export function augmentAvailableCommands(
     }
   }
 
-  const skills = discoverSkillCommands(cwd);
+  const skills = discoverSkillCommands(cwd, environment);
   for (const skill of skills) {
     if (!result.has(skill.name)) {
       result.set(skill.name, skill);
@@ -240,4 +245,3 @@ export function augmentAvailableCommands(
 
   return Array.from(result.values());
 }
-

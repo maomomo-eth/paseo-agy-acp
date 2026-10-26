@@ -5,6 +5,8 @@ import path from "node:path";
 const MAX_PASEO_APPEND_CHARS = 200_000;
 const PASEO_APPEND_RETRY_ATTEMPTS = 25;
 const PASEO_APPEND_RETRY_DELAY_MS = 20;
+// 只缓存定位结果；每轮仍读取内容，允许 daemon 在会话期间更新上下文。
+const paseoAgentStatePaths = new Map<string, string>();
 
 export const PASEO_DAEMON_CONTEXT_OPEN = "[Paseo daemon system context]";
 export const PASEO_DAEMON_CONTEXT_CLOSE = "[/Paseo daemon system context]";
@@ -58,20 +60,25 @@ export async function readPaseoDaemonAppendSystemPrompt(
   const home = resolvePaseoHome(environment);
   const agentId = environment.PASEO_AGENT_ID;
   if (!home || !agentId || agentId.includes("/") || agentId.includes("\\")) return "";
+  const cacheKey = path.join(home, "agents", `${agentId}.json`);
 
   for (let attempt = 0; attempt < PASEO_APPEND_RETRY_ATTEMPTS; attempt++) {
     try {
-      const statePath = await findPaseoAgentState(path.join(home, "agents"), `${agentId}.json`);
+      const statePath = paseoAgentStatePaths.get(cacheKey) ??
+        await findPaseoAgentState(path.join(home, "agents"), `${agentId}.json`);
       if (statePath) {
+        paseoAgentStatePaths.set(cacheKey, statePath);
         const state = JSON.parse(await readFile(statePath, "utf8")) as {
           persistence?: { metadata?: { daemonAppendSystemPrompt?: unknown } };
-        };
-        const append = state.persistence?.metadata?.daemonAppendSystemPrompt;
-        if (typeof append === "string" && append.trim()) {
-          return append.trim().slice(0, MAX_PASEO_APPEND_CHARS);
-        }
+        } | null;
+        const append = state?.persistence?.metadata?.daemonAppendSystemPrompt;
+        return typeof append === "string" ? append.trim().slice(0, MAX_PASEO_APPEND_CHARS) : "";
       }
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT" ||
+          (error as NodeJS.ErrnoException).code === "ENOTDIR") {
+        paseoAgentStatePaths.delete(cacheKey);
+      }
       // Paseo may still be writing the state file. Retry briefly, then fail open.
     }
     if (attempt < PASEO_APPEND_RETRY_ATTEMPTS - 1) {

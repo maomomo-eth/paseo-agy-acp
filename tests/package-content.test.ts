@@ -7,6 +7,14 @@ import { describe, expect, it } from "vitest";
 const repositoryRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 describe("published package content", () => {
+  it.each([
+    { payload: [{ files: [{ path: "package.json" }, { path: "README.md" }] }] },
+    { payload: { files: [{ path: "package.json" }, { path: "README.md" }] } },
+    { payload: { "paseo-agy-acp": { files: [{ path: "package.json" }, { path: "README.md" }] } } }
+  ])("兼容 npm pack 的数组或对象 JSON 结果", ({ payload }) => {
+    expect(parseNpmPackPaths(payload)).toEqual(["README.md", "package.json"]);
+  });
+
   it("contains the P3 CLI and self-owned assets without kernel artifacts", () => {
     const manifest = JSON.parse(readFileSync(path.join(repositoryRoot, "package.json"), "utf8")) as {
       bin?: Record<string, string>;
@@ -49,7 +57,17 @@ function npmPackDryRunPaths(): string[] {
     env: { ...process.env, npm_config_color: "false" }
   });
   expect(result.status).toBe(0);
-  const payload = JSON.parse(result.stdout) as Array<{ files?: Array<{ path: string }> }>;
+  return parseNpmPackPaths(JSON.parse(result.stdout));
+}
+
+type PackedPackage = { files?: Array<{ path: string }> };
+
+function parseNpmPackPaths(parsed: PackedPackage | PackedPackage[] | Record<string, PackedPackage>): string[] {
+  const payload = Array.isArray(parsed)
+    ? parsed
+    : "files" in parsed
+      ? [parsed as PackedPackage]
+      : Object.values(parsed) as PackedPackage[];
   expect(payload).toHaveLength(1);
   expect(payload[0].files).toBeDefined();
   return payload[0].files?.map((file) => file.path).sort() ?? [];
