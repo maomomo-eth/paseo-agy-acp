@@ -86,7 +86,7 @@ export const DEFAULT_KERNEL_COMPAT_LAYOUT: KernelCompatLayout = Object.freeze({
 
 export interface KernelCompatMarkerEdit {
   readonly id: string;
-  readonly target: "modelSelection" | "proxyServer";
+  readonly target: Exclude<KernelCompatTargetName, "serverControl">;
   readonly find: string;
   readonly replacement: string;
 }
@@ -698,8 +698,8 @@ function validatePatchPlan(plan: KernelCompatPatchPlan): KernelCompatPatchPlan {
     if (ids.has(edit.id)) throw new KernelCompatLifecycleError(`patch marker id ${edit.id} is duplicated`);
     ids.add(edit.id);
     const target = edit.target;
-    if (target !== "modelSelection" && target !== "proxyServer") {
-      throw new KernelCompatLifecycleError("patch edits may target only modelSelection or proxyServer");
+    if (target !== "modelSelection" && target !== "proxyServer" && target !== "proxyAgentConfig") {
+      throw new KernelCompatLifecycleError("patch edits may target only modelSelection, proxyServer or proxyAgentConfig");
     }
     assertPatchText(edit.find, `patch marker ${edit.id} exact match`);
     assertPatchText(edit.replacement, `patch marker ${edit.id} replacement`);
@@ -707,7 +707,7 @@ function validatePatchPlan(plan: KernelCompatPatchPlan): KernelCompatPatchPlan {
       throw new KernelCompatLifecycleError(`patch marker ${edit.id} replacement must change the matched text`);
     }
     if (target === "modelSelection") targetCounts.modelSelection += 1;
-    else targetCounts.proxyServer += 1;
+    else if (target === "proxyServer") targetCounts.proxyServer += 1;
     return Object.freeze({ ...edit, target });
   });
   if (targetCounts.modelSelection === 0 || targetCounts.proxyServer === 0) {
@@ -753,6 +753,7 @@ function snapshotPins(pins: KernelCompatPins): KernelCompatPins {
     targets: Object.freeze({
       modelSelection: Object.freeze({ ...pins.targets.modelSelection }),
       proxyServer: Object.freeze({ ...pins.targets.proxyServer }),
+      proxyAgentConfig: Object.freeze({ ...pins.targets.proxyAgentConfig }),
       serverControl: Object.freeze({ ...pins.targets.serverControl })
     })
   });
@@ -1177,7 +1178,7 @@ function targetPaths(runfilesPath: string, pins: KernelCompatPins, uid: number):
 }
 
 function applyPatchPlan(paths: Record<KernelCompatTargetName, string>, patchPlan: KernelCompatPatchPlan, uid: number): void {
-  for (const target of ["modelSelection", "proxyServer"] as const) {
+  for (const target of ["modelSelection", "proxyServer", "proxyAgentConfig"] as const) {
     const source = readSmallTextFile(paths[target], `${target} source`, uid);
     const edits = patchPlan.edits.filter((edit) => edit.target === target);
     let patched = source;
@@ -2206,7 +2207,7 @@ function renderReleaseWrapperVerifier(expectedPinDigest: string): string {
     "function ownedFile(filePath, label, uid, executable, exactMode) { const stat = lstatSync(filePath); if (stat.isSymbolicLink() || !stat.isFile() || stat.uid !== uid || (stat.mode & 0o022) !== 0) throw new Error(label + ' is not a safe current-user-owned regular file'); if (executable && (stat.mode & 0o111) === 0) throw new Error(label + ' is not executable'); if (exactMode !== undefined && (stat.mode & 0o777) !== exactMode) throw new Error(label + ' has unsafe permissions'); return stat; }",
     "function smallDigest(filePath, label, uid, executable) { const stat = ownedFile(filePath, label, uid, executable); if (stat.size > MAX_SMALL_FILE_BYTES) throw new Error(label + ' exceeds the small-file limit'); return { sha256: createHash('sha256').update(readFileSync(filePath)).digest('hex'), bytes: stat.size }; }",
     "function sameDigest(actual, expected, label) { if (!expected || typeof expected.sha256 !== 'string' || !Number.isSafeInteger(expected.bytes) || actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) throw new Error(label + ' postimage does not match the receipt'); }",
-    "function main() { const uid = typeof process.getuid === 'function' ? process.getuid() : undefined; if (uid === undefined || uid === 0) throw new Error('root or non-POSIX execution is refused'); const release = path.resolve(process.argv[2] ?? ''); const releaseStat = lstatSync(release); if (releaseStat.isSymbolicLink() || !releaseStat.isDirectory() || releaseStat.uid !== uid || (releaseStat.mode & 0o777) !== 0o500) throw new Error('release directory is unsafe'); const receiptPath = safePath(release, 'receipt.json', 'receipt'); const receiptStat = ownedFile(receiptPath, 'receipt', uid, false, 0o600); if (receiptStat.size > 64 * 1024) throw new Error('receipt exceeds the safe size limit'); const receipt = JSON.parse(readFileSync(receiptPath, 'utf8')); if (receipt.schemaVersion !== 2 || receipt.pinDigest !== EXPECTED_PIN_DIGEST) throw new Error('receipt is stale or invalid'); if (!receipt.layout || receipt.layout.runfilesRelativePath !== 'agy_acp_server.runfiles' || receipt.layout.kernelExecutableRelativePath !== 'agy_acp_server' || receipt.layout.externalHarnessRelativePath !== 'localharness_external' || !receipt.postimages || !receipt.wrapper) throw new Error('receipt layout is invalid'); const runfiles = safePath(release, receipt.layout.runfilesRelativePath, 'runfiles'); const runfilesStat = lstatSync(runfiles); if (runfilesStat.isSymbolicLink() || !runfilesStat.isDirectory() || runfilesStat.uid !== uid || (runfilesStat.mode & 0o777) !== 0o500) throw new Error('runfiles directory is unsafe'); for (const name of ['modelSelection', 'proxyServer', 'serverControl', 'compatModule']) { const postimage = receipt.postimages[name]; if (!postimage || !safeRelative(postimage.relativePath)) throw new Error(name + ' receipt postimage is invalid'); sameDigest(smallDigest(safePath(runfiles, postimage.relativePath, name), name, uid, false), postimage, name); } const wrapper = safePath(release, receipt.wrapper.relativePath, 'wrapper'); sameDigest(smallDigest(wrapper, 'wrapper', uid, true), { sha256: receipt.wrapper.sha256, bytes: receipt.wrapper.bytes }, 'wrapper'); const verifier = safePath(release, receipt.wrapper.verifierRelativePath, 'wrapper verifier'); sameDigest(smallDigest(verifier, 'wrapper verifier', uid, true), { sha256: receipt.wrapper.verifierSha256, bytes: receipt.wrapper.verifierBytes }, 'wrapper verifier'); ownedFile(safePath(release, 'agy_acp_server', 'kernel executable'), 'kernel executable', uid, true, 0o500); ownedFile(safePath(release, 'localharness_external', 'external harness'), 'external harness', uid, true, 0o500); for (const [name, relativePath] of Object.entries(receipt.layout.importerEnvironment ?? {})) { if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || !safeRelative(relativePath)) throw new Error('importer environment is invalid'); const importer = safePath(runfiles, relativePath, 'importer environment'); const importerStat = lstatSync(importer); if (importerStat.isSymbolicLink() || (!importerStat.isFile() && !importerStat.isDirectory()) || importerStat.uid !== uid) throw new Error('importer environment is unsafe'); } }",
+    "function main() { const uid = typeof process.getuid === 'function' ? process.getuid() : undefined; if (uid === undefined || uid === 0) throw new Error('root or non-POSIX execution is refused'); const release = path.resolve(process.argv[2] ?? ''); const releaseStat = lstatSync(release); if (releaseStat.isSymbolicLink() || !releaseStat.isDirectory() || releaseStat.uid !== uid || (releaseStat.mode & 0o777) !== 0o500) throw new Error('release directory is unsafe'); const receiptPath = safePath(release, 'receipt.json', 'receipt'); const receiptStat = ownedFile(receiptPath, 'receipt', uid, false, 0o600); if (receiptStat.size > 64 * 1024) throw new Error('receipt exceeds the safe size limit'); const receipt = JSON.parse(readFileSync(receiptPath, 'utf8')); if (receipt.schemaVersion !== 2 || receipt.pinDigest !== EXPECTED_PIN_DIGEST) throw new Error('receipt is stale or invalid'); if (!receipt.layout || receipt.layout.runfilesRelativePath !== 'agy_acp_server.runfiles' || receipt.layout.kernelExecutableRelativePath !== 'agy_acp_server' || receipt.layout.externalHarnessRelativePath !== 'localharness_external' || !receipt.postimages || !receipt.wrapper) throw new Error('receipt layout is invalid'); const runfiles = safePath(release, receipt.layout.runfilesRelativePath, 'runfiles'); const runfilesStat = lstatSync(runfiles); if (runfilesStat.isSymbolicLink() || !runfilesStat.isDirectory() || runfilesStat.uid !== uid || (runfilesStat.mode & 0o777) !== 0o500) throw new Error('runfiles directory is unsafe'); for (const name of ['modelSelection', 'proxyServer', 'proxyAgentConfig', 'serverControl', 'compatModule']) { const postimage = receipt.postimages[name]; if (!postimage || !safeRelative(postimage.relativePath)) throw new Error(name + ' receipt postimage is invalid'); sameDigest(smallDigest(safePath(runfiles, postimage.relativePath, name), name, uid, false), postimage, name); } const wrapper = safePath(release, receipt.wrapper.relativePath, 'wrapper'); sameDigest(smallDigest(wrapper, 'wrapper', uid, true), { sha256: receipt.wrapper.sha256, bytes: receipt.wrapper.bytes }, 'wrapper'); const verifier = safePath(release, receipt.wrapper.verifierRelativePath, 'wrapper verifier'); sameDigest(smallDigest(verifier, 'wrapper verifier', uid, true), { sha256: receipt.wrapper.verifierSha256, bytes: receipt.wrapper.verifierBytes }, 'wrapper verifier'); ownedFile(safePath(release, 'agy_acp_server', 'kernel executable'), 'kernel executable', uid, true, 0o500); ownedFile(safePath(release, 'localharness_external', 'external harness'), 'external harness', uid, true, 0o500); for (const [name, relativePath] of Object.entries(receipt.layout.importerEnvironment ?? {})) { if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || !safeRelative(relativePath)) throw new Error('importer environment is invalid'); const importer = safePath(runfiles, relativePath, 'importer environment'); const importerStat = lstatSync(importer); if (importerStat.isSymbolicLink() || (!importerStat.isFile() && !importerStat.isDirectory()) || importerStat.uid !== uid) throw new Error('importer environment is unsafe'); } }",
     "try { main(); } catch (error) { fail(error instanceof Error ? error.message : 'verification failed'); }"
   ].join("\n") + "\n";
 }

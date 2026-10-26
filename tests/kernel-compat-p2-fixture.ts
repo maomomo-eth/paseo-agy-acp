@@ -24,6 +24,7 @@ export interface KernelCompatP2FixtureOptions {
   readonly partialUnpack?: boolean;
   readonly modelSource?: string;
   readonly proxySource?: string;
+  readonly proxyAgentConfigSource?: string;
   readonly serverSource?: string;
   readonly compatSource?: string;
   readonly unsafeSymlink?: KernelCompatP2UnsafeSymlink;
@@ -48,6 +49,7 @@ export interface KernelCompatP2Fixture {
 
 const DEFAULT_MODEL_SOURCE = "MODEL_IMPORT_MARKER\nMODEL_CATALOG_MARKER\n";
 const DEFAULT_PROXY_SOURCE = "PROXY_IMPORT_MARKER\nPROXY_TRANSFORM_MARKER\n";
+const DEFAULT_PROXY_AGENT_CONFIG_SOURCE = "PROXY_AGENT_CONFIG\n";
 const DEFAULT_SERVER_SOURCE = "OFFICIAL_SERVER_CONTROL\n";
 
 export const P2_PATCH_PLAN: KernelCompatPatchPlan = Object.freeze({
@@ -89,11 +91,13 @@ export function createKernelCompatP2Fixture(options: KernelCompatP2FixtureOption
   const observationPath = path.join(root, "kernel-observation.json");
   const modelSource = options.modelSource ?? DEFAULT_MODEL_SOURCE;
   const proxySource = options.proxySource ?? DEFAULT_PROXY_SOURCE;
+  const proxyAgentConfigSource = options.proxyAgentConfigSource ?? DEFAULT_PROXY_AGENT_CONFIG_SOURCE;
   const serverSource = options.serverSource ?? DEFAULT_SERVER_SOURCE;
   writeFileSync(parPath, renderFakeSelfUnpacker({
     partialUnpack: options.partialUnpack ?? false,
     modelSource,
     proxySource,
+    proxyAgentConfigSource,
     serverSource,
     unsafeSymlink: options.unsafeSymlink
   }), { mode: 0o775 });
@@ -116,6 +120,11 @@ export function createKernelCompatP2Fixture(options: KernelCompatP2FixtureOption
       proxyServer: {
         relativePath: `${ACP_SERVER_DIRECTORY}/ccpa_connection/proxy_server.py`,
         preimageSha256: sha256Text(proxySource),
+        patchable: true
+      },
+      proxyAgentConfig: {
+        relativePath: `${ACP_SERVER_DIRECTORY}/proxy_agent_config.py`,
+        preimageSha256: sha256Text(proxyAgentConfigSource),
         patchable: true
       },
       serverControl: {
@@ -203,6 +212,7 @@ function renderFakeSelfUnpacker(payload: {
   readonly partialUnpack: boolean;
   readonly modelSource: string;
   readonly proxySource: string;
+  readonly proxyAgentConfigSource: string;
   readonly serverSource: string;
   readonly unsafeSymlink?: KernelCompatP2UnsafeSymlink;
 }): string {
@@ -247,6 +257,7 @@ function renderFakeSelfUnpacker(payload: {
     `  ${symlinkCommand.replace(/\n/g, "\n  ")}`,
     ...(payload.partialUnpack ? [] : [
       `  ${writeRunfile(`${ACP_SERVER_DIRECTORY}/ccpa_connection/proxy_server.py`, payload.proxySource, 0o400).replace(/\n/g, "\n  ")}`,
+      `  ${writeRunfile(`${ACP_SERVER_DIRECTORY}/proxy_agent_config.py`, payload.proxyAgentConfigSource, 0o400).replace(/\n/g, "\n  ")}`,
       `  ${writeRunfile(`${ACP_SERVER_DIRECTORY}/server.py`, payload.serverSource, 0o400).replace(/\n/g, "\n  ")}`
     ]),
     "  chmod 775 -- \"$binary_dir/agy_acp_server\"",

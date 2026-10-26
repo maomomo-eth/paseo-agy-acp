@@ -34,6 +34,15 @@ export const RC01_KERNEL_COMPAT_PATCH_PLAN: KernelCompatPatchPlan = Object.freez
       replacement:
         "    model = match.group(1)\n" +
         "    incoming_json = transform_request(model, incoming_json)\n"
+    }),
+    Object.freeze({
+      id: "skills-tool-presentation",
+      target: "proxyAgentConfig" as const,
+      // 1.4.3 默认将内置技能写入工作区；改用技能工具保留发现和读取能力。
+      find: "    harness_config = super()._build_harness_config()\n",
+      replacement:
+        "    harness_config = super()._build_harness_config()\n" +
+        "    harness_config.skills_config.presentation_mode = localharness_pb2.SkillsConfig.TOOL\n"
     })
   ])
 });
