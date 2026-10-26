@@ -189,7 +189,7 @@ describe("official kernel adapters", () => {
     });
   });
 
-  it("rewrites MCP http servers to sse with header arrays", () => {
+  it("preserves MCP http transport with header arrays", () => {
     expect(
       rewriteMcpServers({
         mcpServers: [
@@ -205,7 +205,7 @@ describe("official kernel adapters", () => {
       mcpServers: [
         {
           name: "paseo",
-          type: "sse",
+          type: "http",
           url: "http://127.0.0.1:6767/mcp",
           headers: [{ name: "Authorization", value: "Bearer token" }]
         }
@@ -353,7 +353,7 @@ describe("official kernel proxy", () => {
         expect(created).toMatchObject({
           result: {
             modeId: "auto_edit",
-            mcpServers: [{ type: "sse", headers: [{ name: "K", value: "V" }] }]
+            mcpServers: expect.arrayContaining([expect.objectContaining({ type: "http", headers: [{ name: "K", value: "V" }] })])
           }
         });
 
@@ -427,7 +427,7 @@ describe("official kernel proxy", () => {
           });
           const reply = await waitFor((message) => "id" in message && message.id === id);
           expect(reply).toMatchObject({
-            result: { mcpServers: [{ type: "sse", headers: [{ name: "K", value: "V" }] }] }
+            result: { mcpServers: expect.arrayContaining([expect.objectContaining({ type: "http", headers: [{ name: "K", value: "V" }] })]) }
           });
           const servers = (reply as { result: { mcpServers: Array<{ url: string }> } }).result.mcpServers;
           expect(servers[0]?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/b\/[a-f0-9]{16}\/mcp$/);

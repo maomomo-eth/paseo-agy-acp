@@ -133,15 +133,10 @@ export class McpProtocolBridge {
         }
         response.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
         const responseType = headerValue(upstreamResponse.headers["content-type"]);
-        if (!shouldRewriteResponse(responseType)) {
-          upstreamResponse.pipe(response);
-          return;
-        }
-        const rewritten = upstreamResponse.pipe(replaceOriginStream(upstream.origin, local));
         if (responseType.toLowerCase().includes("text/event-stream")) {
-          rewritten.pipe(rewriteSseEndpointStream(upstream.origin, local)).pipe(response);
+          upstreamResponse.pipe(rewriteSseEndpointStream(upstream.origin, local)).pipe(response);
         } else {
-          rewritten.pipe(response);
+          upstreamResponse.pipe(response);
         }
       });
       upstreamRequest.end(forwardedBody);
@@ -182,27 +177,12 @@ function downgradeRequestHeaders(headers: IncomingHttpHeaders, destination: URL,
   return next;
 }
 
-function replaceOriginStream(origin: string, local: string): Transform {
-  let pending = "";
-  const decoder = new StringDecoder("utf8");
-  return new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      pending += decoder.write(chunk);
-      const suffix = originPrefixLength(pending, origin);
-      const emit = pending.slice(0, pending.length - suffix).replaceAll(origin, local);
-      pending = pending.slice(pending.length - suffix);
-      callback(null, emit);
-    },
-    flush(callback) {
-      pending += decoder.end();
-      callback(null, pending.replaceAll(origin, local));
-    }
-  });
-}
-
 function rewriteEndpoint(value: string, origin: string, local: string): string {
   if (value.startsWith("/") && !value.startsWith("//")) return `${local}${value}`;
-  return value.replaceAll(origin, local);
+  if (value === origin || value.startsWith(`${origin}/`) || value.startsWith(`${origin}?`)) {
+    return local + value.slice(origin.length);
+  }
+  return value;
 }
 
 function rewriteSseEndpointStream(origin: string, local: string): Transform {
@@ -247,19 +227,6 @@ function rewriteSseEndpointStream(origin: string, local: string): Transform {
       callback(null, rewriteLine(pending + decoder.end()));
     }
   });
-}
-
-function originPrefixLength(value: string, origin: string): number {
-  const max = Math.min(origin.length - 1, value.length);
-  for (let length = max; length > 0; length -= 1) {
-    if (origin.startsWith(value.slice(value.length - length))) return length;
-  }
-  return 0;
-}
-
-function shouldRewriteResponse(contentType: string): boolean {
-  const type = contentType.toLowerCase();
-  return type.includes("json") || type.includes("text/event-stream") || type.startsWith("text/");
 }
 
 function headerValue(value: string | string[] | undefined): string {

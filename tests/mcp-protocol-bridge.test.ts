@@ -12,6 +12,21 @@ afterEach(async () => {
 });
 
 describe("MCP protocol bridge", () => {
+  it.each(["application/json", "text/plain", "text/event-stream"])("%s 工具正文中的上游 URL 保持原文", async contentType => {
+    let body = "";
+    const upstream = createServer((_request, response) => {
+      const origin = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+      const text = `工具文档引用 ${origin}/docs 保持原文`;
+      body = contentType === "text/event-stream" ? `event: message\ndata: ${JSON.stringify({ text })}\n\n` : text;
+      response.writeHead(200, { "content-type": contentType }).end(body);
+    });
+    await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
+    closers.push(() => new Promise(resolve => upstream.close(() => resolve())));
+    const bridge = new McpProtocolBridge(); bridges.push(bridge);
+    const url = await bridge.register(`http://127.0.0.1:${(upstream.address() as { port: number }).port}/mcp`);
+    expect(await (await fetch(url)).text()).toBe(body);
+  });
+
   it.each([
     { name: "LF", chunks: ["event: endpoint\ndata: /message?session=abc\n\nevent: message\ndata: /ordinary\n\n"] },
     { name: "CR", chunks: ["event: endpoint\rdata: /message?session=abc\r\revent: message\rdata: /ordinary\r\r"] },

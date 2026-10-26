@@ -1,3 +1,4 @@
+import type { ClassifiedProviderFailure } from "./errors.js";
 /**
  * Request-scoped stdin write fence used by Admission around one official
  * `session/prompt` dispatch. The official kernel owns process creation; this
@@ -24,4 +25,10 @@ export class AgyCliError extends Error {
 }
 
 /** Provider failure proven terminal by the official kernel or a classified 5xx. */
-export class AgyTerminalProviderError extends AgyCliError {}
+export class AgyTerminalProviderError extends AgyCliError {
+  readonly failure?: ClassifiedProviderFailure;
+  constructor(message: string, command: string[], exitCode: number | null, stderr: string, failure?: ClassifiedProviderFailure) {
+    super(message, command, exitCode, stderr);
+    this.failure = failure;
+  }
+}

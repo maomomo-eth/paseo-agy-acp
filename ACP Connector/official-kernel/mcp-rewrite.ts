@@ -25,7 +25,6 @@ function toHeaderArray(value: unknown): HeaderPair[] {
 function rewriteMcpServer(server: unknown): unknown {
   if (!isRecord(server)) return server;
   const next: Record<string, unknown> = { ...server };
-  if (next.type === "http") next.type = "sse";
   if (next.headers === undefined || (isRecord(next.headers) && !Array.isArray(next.headers))) {
     next.headers = toHeaderArray(next.headers);
   } else if (Array.isArray(next.headers)) {
