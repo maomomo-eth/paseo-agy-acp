@@ -1,4 +1,4 @@
-export type KernelCompatTargetName = "modelSelection" | "proxyServer" | "serverControl";
+export type KernelCompatTargetName = "modelSelection" | "proxyServer" | "proxyAgentConfig" | "serverControl";
 
 export interface KernelCompatTargetPin {
   readonly relativePath: string;
@@ -29,6 +29,11 @@ export const PRODUCTION_KERNEL_COMPAT_PINS: KernelCompatPins = Object.freeze({
       preimageSha256: "e350a8c7bef2d9e3616c6980774527d100137275bec5da147781e87f587012de",
       patchable: true
     }),
+    proxyAgentConfig: Object.freeze({
+      relativePath: "google3/cloud/developer_experience/antigravity_extensions/acp_server/proxy_agent_config.py",
+      preimageSha256: "3a7ca6fa8937c67fa27c54f42ce66095687b735898536afc32e0dc970c4ae182",
+      patchable: true
+    }),
     serverControl: Object.freeze({
       relativePath: "google3/cloud/developer_experience/antigravity_extensions/acp_server/server.py",
       preimageSha256: "5a51fe07811386fed8e31b2de36137beac76796a3b78272f14b226f310bd2c3b",
@@ -40,5 +45,6 @@ export const PRODUCTION_KERNEL_COMPAT_PINS: KernelCompatPins = Object.freeze({
 export const KERNEL_COMPAT_TARGET_NAMES: readonly KernelCompatTargetName[] = Object.freeze([
   "modelSelection",
   "proxyServer",
+  "proxyAgentConfig",
   "serverControl"
 ]);

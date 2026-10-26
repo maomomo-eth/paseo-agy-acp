@@ -90,6 +90,11 @@ describe("P2 official kernel compatibility pins", () => {
       relativePath: `${ACP_SERVER_DIRECTORY}/ccpa_connection/proxy_server.py`,
       preimageSha256: "e350a8c7bef2d9e3616c6980774527d100137275bec5da147781e87f587012de"
     });
+    expect(PRODUCTION_KERNEL_COMPAT_PINS.targets.proxyAgentConfig).toMatchObject({
+      relativePath: `${ACP_SERVER_DIRECTORY}/proxy_agent_config.py`,
+      preimageSha256: "3a7ca6fa8937c67fa27c54f42ce66095687b735898536afc32e0dc970c4ae182",
+      patchable: true
+    });
     expect(PRODUCTION_KERNEL_COMPAT_PINS.targets.serverControl).toMatchObject({
       relativePath: `${ACP_SERVER_DIRECTORY}/server.py`,
       preimageSha256: "5a51fe07811386fed8e31b2de36137beac76796a3b78272f14b226f310bd2c3b",
@@ -99,6 +104,32 @@ describe("P2 official kernel compatibility pins", () => {
 });
 
 describe("P2 official kernel compatibility lifecycle", () => {
+  it("checks the skill configuration preimage and refuses runtime tampering", async () => {
+    const created = fixture();
+    const wrongPins: KernelCompatPins = {
+      ...created.pins,
+      targets: {
+        ...created.pins.targets,
+        proxyAgentConfig: { ...created.pins.targets.proxyAgentConfig, preimageSha256: "f".repeat(64) }
+      }
+    };
+    await expect(lifecycleFor(created, wrongPins).prepare(created.prepareOptions))
+      .rejects.toThrow(/proxyAgentConfig preimage hash/);
+    expect(readdirSync(path.join(created.stateRoot, "releases"))).toEqual([]);
+
+    const lifecycle = lifecycleFor(created);
+    const prepared = await lifecycle.prepare(created.prepareOptions);
+    const configPath = path.join(prepared.releasePath, RUNFILES_DIRECTORY, ACP_SERVER_DIRECTORY, "proxy_agent_config.py");
+    chmodSync(configPath, 0o600);
+    writeFileSync(configPath, "TAMPERED_CONFIG\n", "utf8");
+    chmodSync(configPath, 0o400);
+    await expect(lifecycle.verify(prepared.artifactId)).rejects.toThrow(/proxyAgentConfig postimage hash/);
+    const result = runWrapper(prepared.wrapperPath, created);
+    expect(result.status).not.toBe(0);
+    expect(String(result.stderr)).toContain("proxyAgentConfig postimage does not match the receipt");
+    expect(existsSync(created.observationPath)).toBe(false);
+  });
+
   it("prepares the adjacent binary/runfiles layout, preserves the verified main link, and is idempotent", async () => {
     const created = fixture();
     const lifecycle = lifecycleFor(created);

@@ -208,22 +208,39 @@ function rewriteEndpoint(value: string, origin: string, local: string): string {
 function rewriteSseEndpointStream(origin: string, local: string): Transform {
   let pending = "";
   let endpointEvent = false;
+  let afterCr = false;
   const decoder = new StringDecoder("utf8");
   const rewriteLine = (line: string): string => {
-    if (line.trim().length === 0) endpointEvent = false;
+    if (line.length === 0) endpointEvent = false;
     if (line.startsWith("event:")) endpointEvent = line.slice(6).trim() === "endpoint";
     if (!endpointEvent) return line;
-    return line.replace(/^(data: ?)([^\r\n]+)(\r?\n)?$/, (_match, prefix: string, value: string, ending: string | undefined) =>
-      `${prefix}${rewriteEndpoint(value, origin, local)}${ending ?? ""}`);
+    return line.replace(/^(data: ?)(.*)$/, (_match, prefix: string, value: string) =>
+      `${prefix}${rewriteEndpoint(value, origin, local)}`);
   };
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
-      pending += decoder.write(chunk);
-      let newline: number;
-      while ((newline = pending.indexOf("\n")) !== -1) {
-        this.push(rewriteLine(pending.slice(0, newline + 1)));
-        pending = pending.slice(newline + 1);
+      const text = decoder.write(chunk);
+      if (text.length === 0) { callback(); return; }
+      let start = 0;
+      // CR 立即结束一行；若下个 chunk 以 LF 开头，只补齐原始 CRLF，不能再解析为空行。
+      if (afterCr) {
+        afterCr = false;
+        if (text[0] === "\n") { this.push("\n"); start = 1; }
       }
+      for (let cursor = start; cursor < text.length; cursor++) {
+        const char = text[cursor];
+        if (char !== "\r" && char !== "\n") continue;
+        const line = pending + text.slice(start, cursor);
+        pending = "";
+        let ending = char;
+        if (char === "\r") {
+          if (text[cursor + 1] === "\n") { ending = "\r\n"; cursor++; }
+          else if (cursor === text.length - 1) afterCr = true;
+        }
+        this.push(rewriteLine(line) + ending);
+        start = cursor + 1;
+      }
+      pending += text.slice(start);
       callback();
     },
     flush(callback) {

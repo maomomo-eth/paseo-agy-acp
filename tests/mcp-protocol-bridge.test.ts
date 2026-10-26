@@ -1,6 +1,6 @@
-import { createServer } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
 import { once } from "node:events";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpProtocolBridge, bridgeOfficialMcpServers, downgradeMcpInitializeBody, downgradeMcpProtocolVersion } from "../ACP Connector/official-kernel/mcp-protocol-bridge.js";
 
 const bridges: McpProtocolBridge[] = [];
@@ -12,6 +12,57 @@ afterEach(async () => {
 });
 
 describe("MCP protocol bridge", () => {
+  it.each([
+    { name: "LF", chunks: ["event: endpoint\ndata: /message?session=abc\n\nevent: message\ndata: /ordinary\n\n"] },
+    { name: "CR", chunks: ["event: endpoint\rdata: /message?session=abc\r\revent: message\rdata: /ordinary\r\r"] },
+    { name: "CRLF", chunks: ["event: endpoint\r\ndata: /message?session=abc\r\n\r\nevent: message\r\ndata: /ordinary\r\n\r\n"] },
+    { name: "跨 chunk CRLF", chunks: ["event: endpoint\r", "\ndata: /message?session=abc\r", "\n\r", "\nevent: message\r", "\ndata: /ordinary\r", "\n\r", "\n"] },
+    { name: "混合换行", chunks: ["event: endpoint\rdata: /message?session=abc\n\r", "\nevent: message\ndata: /ordinary\r\n\r"] }
+  ])("$name 换行的 SSE 在长连接保持打开时及时重写并转发", async ({ chunks }) => {
+    let source!: ServerResponse;
+    const upstream = createServer((_request, response) => {
+      source = response;
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.flushHeaders();
+    });
+    await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
+    closers.push(() => new Promise(resolve => upstream.close(() => resolve())));
+    const bridge = new McpProtocolBridge();
+    bridges.push(bridge);
+    const port = (upstream.address() as { port: number }).port;
+    const localUrl = await bridge.register(`http://127.0.0.1:${port}/events`);
+    const prefix = localUrl.slice(0, localUrl.indexOf("/events"));
+    const expected = chunks.join("").replace("data: /message", `data: ${prefix}/message`);
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 1_000);
+    try {
+      const response = fetch(localUrl, { signal: abort.signal });
+      const received = (async () => {
+        const reader = (await response).body!.getReader();
+        const decoder = new TextDecoder();
+        let text = "";
+        while (text.length < expected.length) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          text += decoder.decode(value, { stream: true });
+        }
+        return text;
+      })();
+      // 立即捕获超时拒绝，随后仍由 await received 报告失败。
+      void received.catch(() => {});
+      await vi.waitFor(() => expect(source).toBeDefined());
+      for (const chunk of chunks) {
+        source.write(chunk);
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(await received).toBe(expected);
+      expect(source.writableEnded).toBe(false);
+    } finally {
+      clearTimeout(timer);
+      abort.abort();
+    }
+  });
+
   it("关闭未启动、并发启动和正在启动的 bridge 均可重复调用", async () => {
     const unused = new McpProtocolBridge();
     await Promise.all([unused.close(), unused.close()]);

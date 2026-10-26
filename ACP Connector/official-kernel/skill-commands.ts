@@ -108,6 +108,7 @@ export function parseFrontmatter(content: string): {
 export function resolveSkillRoots(cwd?: string, environment: NodeJS.ProcessEnv = process.env): string[] {
   const roots = new Set<string>();
   const home = environment.HOME || homedir();
+  const paseoHome = resolvePaseoHome(environment);
 
   const readSkillsJson = (filePath: string, baseDir: string): void => {
     if (!existsSync(filePath)) return;
@@ -140,6 +141,7 @@ export function resolveSkillRoots(cwd?: string, environment: NodeJS.ProcessEnv =
 
   // 1. Workspace declared configs in skills.json
   if (cwd && existsSync(cwd)) {
+    readSkillsJson(path.join(cwd, ".paseo/skills.json"), cwd);
     readSkillsJson(path.join(cwd, ".agents/skills.json"), cwd);
     readSkillsJson(path.join(cwd, "skills.json"), cwd);
     readSkillsJson(path.join(cwd, ".codex/skills.json"), cwd);
@@ -160,13 +162,17 @@ export function resolveSkillRoots(cwd?: string, environment: NodeJS.ProcessEnv =
   }
 
   // 3. Global declared configs in skills.json
+  // 沿用现有全局声明的 home 相对路径语义；默认与自定义 Paseo home 均可配置。
+  for (const directory of new Set([paseoHome, path.join(home, ".paseo")])) {
+    readSkillsJson(path.join(directory, "skills.json"), home);
+  }
   readSkillsJson(path.join(home, ".gemini/config/skills.json"), home);
   readSkillsJson(path.join(home, ".agents/skills.json"), home);
   readSkillsJson(path.join(home, ".codex/skills.json"), home);
 
   // 4. Global default skill directories
   const globalDefaults = [
-    path.join(resolvePaseoHome(environment), "skills"),
+    path.join(paseoHome, "skills"),
     path.join(home, ".paseo/skills"),
     path.join(home, ".gemini/config/skills"),
     path.join(home, ".agents/skills"),
