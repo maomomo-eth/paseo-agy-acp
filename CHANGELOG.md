@@ -2,6 +2,29 @@
 
 All notable changes to `paseo-agy-acp` are recorded here.
 
+## 2.6.1 - 2026-10-26
+
+### Fixed
+
+- Preserve built-in and user skill lookup without automatically writing built-in
+  skill files into project workspaces on the managed Linux x86_64 runtime (#18).
+- Pin the official 1.4.3 skill configuration preimage and enforce its patched
+  postimage both during lifecycle verification and at wrapper startup. The
+  official server control source remains unchanged.
+
+### Compatibility and verification
+
+- Upstream remains Registry `antigravity-acp` 1.4.3. Verified the real harness
+  default-mode workspace write and TOOL-mode built-in/user skill reads with an
+  empty workspace, plus fail-closed behavior after isolated runtime tampering.
+- Smoke-tested the Paseo 0.13.0 ACP client, new sessions, modes and commands,
+  and real product-proxy text/tool turns. Paseo 0.12.0, the complete daemon/UI,
+  and other operating systems were not retested for this patch.
+- Complete validation: 44 test files, 265 passed and one root-only ownership
+  test skipped; architecture and secret checks passed. npm 10/11 package checks
+  and actual npm 12 packing passed. The existing npm 12 package-content JSON
+  assertion remains unsupported in this patch; PR #19 changes are not included.
+
 ## 2.6.0 - 2026-10-24
 
 ### Changed
