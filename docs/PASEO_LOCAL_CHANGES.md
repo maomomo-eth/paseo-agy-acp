@@ -4,7 +4,7 @@ From 2.1.0.0 the ACP kernel is official Google Antigravity ACP (spawned, not
 vendored). This file keeps historical Paseo product notes. It is no longer a
 delta log against `shindgew/agy-acp`.
 
-Last updated: 2026-08-29
+Last updated: 2026-10-26
 
 ## Baseline
 
@@ -14,7 +14,13 @@ Last updated: 2026-08-29
 | Product source license | Apache-2.0 (unchanged; we do not relicense) |
 | Official kernel license | Proprietary (Antigravity ToS); not redistributed in the npm package |
 | This project | `https://github.com/tiezbro/paseo-agy-acp` |
-| Package | `paseo-agy-acp@2.6.0` (GitHub tag `v2.6.0`) |
+| Package | `paseo-agy-acp@2.6.1` (GitHub tag `v2.6.1`) |
+
+Current patch: 2.6.1 includes PR #18 only. The managed Linux x86_64 runtime
+uses TOOL skill presentation with pinned source and runtime integrity checks.
+The official upstream remains `antigravity-acp` 1.4.3. Current smoke coverage
+uses the Paseo 0.13.0 ACP client; Paseo 0.12.0, complete daemon/UI integration,
+and other operating systems were not retested for this patch.
 
 Historical sections 1–7 below describe Paseo product behavior that used to sit
 on the scraper kernel. Sections 2–6 (PTY permission scrape, SQLite completion

@@ -20,7 +20,13 @@ This compatibility lifecycle is strictly pinned to official antigravity-acp 1.4.
 | `localharness_external` | `55b2d1d8206d3f38353cdba3c5c5d087cd718241b90500bce4f8009f64495285` |
 | `model_selection.py` (preimage) | `1c3792bd3f8983052364f1600964a17dcfef3b624679441616445c464dcdef85` |
 | `ccpa_connection/proxy_server.py` (preimage) | `e350a8c7bef2d9e3616c6980774527d100137275bec5da147781e87f587012de` |
+| `proxy_agent_config.py` (preimage) | `3a7ca6fa8937c67fa27c54f42ce66095687b735898536afc32e0dc970c4ae182` |
 | `server.py` (unmodified) | `5a51fe07811386fed8e31b2de36137beac76796a3b78272f14b226f310bd2c3b` |
+
+The managed 1.4.3 recipe uses TOOL skill presentation to preserve built-in
+and user skill lookup without automatically writing built-in files into the
+project workspace. The exact configuration edit is covered by both preimage
+pins and runtime postimage verification; `server.py` remains unmodified.
 
 ## Disk and Permission Expectations
 
