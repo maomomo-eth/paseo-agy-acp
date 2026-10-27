@@ -12,6 +12,53 @@ afterEach(async () => {
 });
 
 describe("MCP protocol bridge", () => {
+  it.each(["\n", "\r", "\r\n"].flatMap(ending =>
+    [true, false].flatMap(dataFirst => [true, false].map(absolute => ({ ending, dataFirst, absolute })))
+  ))("按完整事件处理 endpoint：ending=$ending dataFirst=$dataFirst absolute=$absolute", async ({ ending, dataFirst, absolute }) => {
+    const upstream = createServer((_request, response) => {
+      const origin = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+      const data = `data: ${absolute ? origin : ""}/message?session=abc`;
+      const event = dataFirst ? [data, "event: endpoint"] : ["event: endpoint", data];
+      const text = [...event, "", "data: " + origin + "/tool-docs", "event: message", "", ""].join(ending);
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      // 每个字节单独写，覆盖字段和 CRLF 跨 chunk。
+      for (const byte of Buffer.from(text, "utf8")) response.write(Buffer.from([byte]));
+      response.end();
+    });
+    await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
+    closers.push(() => new Promise(resolve => upstream.close(() => resolve())));
+    const origin = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+    const bridge = new McpProtocolBridge(); bridges.push(bridge);
+    const url = await bridge.register(`${origin}/events`);
+    const prefix = url.slice(0, url.indexOf("/events"));
+    const data = `data: ${prefix}/message?session=abc`;
+    const event = dataFirst ? [data, "event: endpoint"] : ["event: endpoint", data];
+    expect(await (await fetch(url)).text()).toBe([...event, "", "data: " + origin + "/tool-docs", "event: message", "", ""].join(ending));
+  });
+
+  it("合并多 data 字段并使用最后 event 字段；不改正文、注释和未完成事件", async () => {
+    let body = "";
+    const upstream = createServer((_request, response) => {
+      const origin = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+      body = [
+        `data:${origin}/message`, "event: message", ": endpoint comment", "data: ?session=abc", "event: endpoint", "",
+        `data: ${origin}/docs`, "event: endpoint", "event: message", "",
+        `data: ${origin}/empty-event`, "event: endpoint", "event", "",
+        "data:", `data: ${origin}/leading-newline`, "event: endpoint", "",
+        `data: ${origin}/extra-space-event`, "event:  endpoint", "",
+        `data: ${origin}/incomplete`, "event: endpoint"
+      ].join("\n");
+      response.writeHead(200, { "content-type": "text/event-stream" }).end(body);
+    });
+    await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
+    closers.push(() => new Promise(resolve => upstream.close(() => resolve())));
+    const origin = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`;
+    const bridge = new McpProtocolBridge(); bridges.push(bridge);
+    const url = await bridge.register(`${origin}/events`);
+    const prefix = url.slice(0, url.indexOf("/events"));
+    expect(await (await fetch(url)).text()).toBe(body.replace(`data:${origin}/message`, `data:${prefix}/message`));
+  });
+
   it.each(["application/json", "text/plain", "text/event-stream"])("%s 工具正文中的上游 URL 保持原文", async contentType => {
     let body = "";
     const upstream = createServer((_request, response) => {
@@ -32,6 +79,9 @@ describe("MCP protocol bridge", () => {
     { name: "CR", chunks: ["event: endpoint\rdata: /message?session=abc\r\revent: message\rdata: /ordinary\r\r"] },
     { name: "CRLF", chunks: ["event: endpoint\r\ndata: /message?session=abc\r\n\r\nevent: message\r\ndata: /ordinary\r\n\r\n"] },
     { name: "跨 chunk CRLF", chunks: ["event: endpoint\r", "\ndata: /message?session=abc\r", "\n\r", "\nevent: message\r", "\ndata: /ordinary\r", "\n\r", "\n"] },
+    { name: "data-first 跨 chunk CRLF", chunks: ["data: /message?session=abc\r", "\nevent: end", "point\r", "\n\r", "\ndata: /ordinary\r", "\nevent: message\r", "\n\r", "\n"] },
+    { name: "data-first 跨 chunk CR", chunks: ["data: /message?session=abc\r", "event: endpoint\r", "\rdata: /ordinary\revent: message\r\r"] },
+    { name: "data-first 跨 chunk LF", chunks: ["data: /message?session=abc\n", "event: endpoint\n", "\ndata: /ordinary\nevent: message\n\n"] },
     { name: "混合换行", chunks: ["event: endpoint\rdata: /message?session=abc\n\r", "\nevent: message\ndata: /ordinary\r\n\r"] }
   ])("$name 换行的 SSE 在长连接保持打开时及时重写并转发", async ({ chunks }) => {
     let source!: ServerResponse;

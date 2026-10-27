@@ -33,6 +33,7 @@ const SESSION_RESUME_METHOD = "session/resume";
 const SESSION_PROMPT_METHOD = "session/prompt";
 const SESSION_SET_MODE_METHOD = "session/set_mode";
 const SESSION_SET_CONFIG_METHOD = "session/set_config_option";
+const SESSION_SET_MODEL_METHOD = "session/set_model";
 const SESSION_CANCEL_METHOD = "session/cancel";
 const SESSION_UPDATE_METHOD = "session/update";
 
@@ -59,8 +60,9 @@ export class OfficialKernelProxy {
   readonly #version: string;
   readonly #pending = new Map<JsonRpcId, PendingClientRequest>();
   readonly #claims = new Map<string, TurnClaim>();
-  readonly #requestedModels = new Map<JsonRpcId, { sessionId: string; model: string }>();
+  readonly #requestedModels = new Map<JsonRpcId, { sessionId: string; model?: string; concrete: boolean }>();
   readonly #sessionModels = new Map<string, string>();
+  readonly #sessionModelFallbacks = new Map<string, string>();
   readonly #sessionCwds = new Map<string, string>();
   readonly #systemMessageFolder = new SystemMessageFolder();
   readonly #env: NodeJS.ProcessEnv;
@@ -78,6 +80,7 @@ export class OfficialKernelProxy {
   #sessionNewTail: Promise<void> = Promise.resolve();
   #closed = false;
   #stopping = false;
+  #drainingChild = false;
   #shutdown: ((error?: Error) => void) | undefined;
   readonly #cancelTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -102,7 +105,9 @@ export class OfficialKernelProxy {
     }, () => this.#writeClient({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "invalid or oversized NDJSON message" } } as unknown as JsonRpcMessage));
     const parseChild = createNdjsonParser((message) => {
       this.#onChildMessage(message);
-    }, () => this.#shutdown?.(new Error("official kernel emitted invalid or oversized NDJSON")));
+    }, () => {
+      if (!this.#stopping) this.#shutdown?.(new Error("official kernel emitted invalid or oversized NDJSON"));
+    });
 
     this.#stdin.on("data", parseClient);
     this.#child.stdout.on("data", parseChild);
@@ -122,6 +127,8 @@ export class OfficialKernelProxy {
         failure ??= error;
         if (this.#closed || this.#stopping) return;
         this.#stopping = true;
+        // 关闭时持续排空内核输出；客户端背压不能阻止 child 的 close。
+        this.#child.stdout.resume();
         for (const claim of this.#claims.values()) claim.abort();
         this.#child.stdin.end();
         this.#child.kill?.("SIGTERM");
@@ -151,6 +158,7 @@ export class OfficialKernelProxy {
         this.#shutdown = undefined;
         this.#child.off("error", onError);
         this.#child.off("close", onClose);
+        this.#child.off("exit", onExit);
         this.#stdin.off("data", parseClient);
         this.#stdin.off("end", endInput);
         this.#child.stdout.off("data", parseChild);
@@ -169,6 +177,7 @@ export class OfficialKernelProxy {
             this.#claims.clear();
             this.#sessionCwds.clear();
             this.#sessionModels.clear();
+            this.#sessionModelFallbacks.clear();
             this.#requestedModels.clear();
             this.#sessionSetup.clear();
             this.#skillTokens.clear();
@@ -179,6 +188,11 @@ export class OfficialKernelProxy {
         })().then(resolve, reject);
       };
       const onClose = () => finish(failure);
+      const onExit = () => {
+        // exit 后仍交付尾部响应，但不再让下游背压阻止 stdio 排空及 close。
+        this.#drainingChild = true;
+        this.#child.stdout.resume();
+      };
       const onError = (error: Error) => {
         if (this.#child.pid !== undefined && typeof this.#child.kill === "function") this.#shutdown?.(error);
         else finish(error);
@@ -186,14 +200,15 @@ export class OfficialKernelProxy {
       this.#child.once("error", onError);
       // close 在 stdio 排空后触发，避免 exit 时丢失最后一条内核响应。
       this.#child.once("close", onClose);
+      this.#child.once("exit", onExit);
     });
   }
 
   close(): void { this.#shutdown?.(); }
 
   #writeClient(message: JsonRpcMessage): void {
-    if (this.#closed) return;
-    if (!this.#stdout.write(encodeNdjson(message))) this.#child.stdout.pause();
+    if (this.#closed || this.#stopping) return;
+    if (!this.#stdout.write(encodeNdjson(message)) && !this.#drainingChild) this.#child.stdout.pause();
   }
 
   #writeChild(message: JsonRpcMessage): void {
@@ -287,9 +302,19 @@ export class OfficialKernelProxy {
       }
     } else if (request.method === SESSION_SET_MODE_METHOD || request.method === SESSION_SET_CONFIG_METHOD) {
       params = rewriteModeFields(params);
-      if (isRecord(params) && (params.configId === "model" || params.id === "model") && typeof params.value === "string") {
+      if (isRecord(params) && typeof params.value === "string") {
+        const optionId = params.configId ?? params.id;
         const sessionId = extractSessionId(params);
-        if (sessionId) this.#requestedModels.set(request.id, { sessionId, model: params.value });
+        if (sessionId && (optionId === "model" || optionId === "thinking_level")) {
+          this.#requestedModels.set(request.id, {
+            sessionId, model: optionId === "model" ? params.value : undefined, concrete: false
+          });
+        }
+      }
+    } else if (request.method === SESSION_SET_MODEL_METHOD) {
+      const sessionId = extractSessionId(params);
+      if (sessionId && isRecord(params) && typeof params.modelId === "string" && params.modelId.length > 0) {
+        this.#requestedModels.set(request.id, { sessionId, model: params.modelId, concrete: true });
       }
     } else if (request.method === SESSION_PROMPT_METHOD) {
       await this.#handlePrompt(request, params);
@@ -368,7 +393,7 @@ export class OfficialKernelProxy {
       finishAdmissionWait = admitted;
       const stopReason = await coordinator.admit({
         sessionId: sessionId ?? "session",
-        model: (sessionId && this.#sessionModels.get(sessionId)) || "unknown",
+        model: (sessionId && (this.#sessionModels.get(sessionId) || this.#sessionModelFallbacks.get(sessionId))) || "unknown",
         promptText,
         claim,
         reportProgress: (progress) => {
@@ -446,7 +471,7 @@ export class OfficialKernelProxy {
     if (Array.isArray(value.configOptions)) {
       for (const option of value.configOptions) {
         if (isRecord(option) && (option.category === "model" || option.id === "model") && typeof option.currentValue === "string") {
-          this.#sessionModels.set(sessionId, option.currentValue);
+          this.#sessionModelFallbacks.set(sessionId, option.currentValue);
         }
       }
     }
@@ -529,7 +554,14 @@ export class OfficialKernelProxy {
       }
       const requestedModel = this.#requestedModels.get(message.id);
       this.#requestedModels.delete(message.id);
-      if (requestedModel && isJsonRpcSuccess(message)) this.#sessionModels.set(requestedModel.sessionId, requestedModel.model);
+      if (requestedModel && isJsonRpcSuccess(message)) {
+        // 显式配置切换可能只返回家族；不能沿用切换前的具体 ID。
+        if (!requestedModel.concrete) this.#sessionModels.delete(requestedModel.sessionId);
+        if (requestedModel.model !== undefined) {
+          const models = requestedModel.concrete ? this.#sessionModels : this.#sessionModelFallbacks;
+          models.set(requestedModel.sessionId, requestedModel.model);
+        }
+      }
       this.#requestTimings.get(message.id)?.();
       this.#requestTimings.delete(message.id);
       const setup = this.#sessionSetup.get(message.id);
@@ -568,7 +600,7 @@ export class OfficialKernelProxy {
           outbound = blankTurnError(message.id);
         }
       }
-      if (isJsonRpcSuccess(message) && pending.sessionId && pending.method === SESSION_SET_CONFIG_METHOD) {
+      if (isJsonRpcSuccess(message) && pending.sessionId && (pending.method === SESSION_SET_CONFIG_METHOD || pending.method === SESSION_SET_MODEL_METHOD)) {
         this.#rememberModel(pending.sessionId, message.result);
       }
       this.#writeClient(outbound);

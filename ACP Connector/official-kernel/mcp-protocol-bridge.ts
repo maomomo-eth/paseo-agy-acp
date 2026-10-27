@@ -187,25 +187,49 @@ function rewriteEndpoint(value: string, origin: string, local: string): string {
 
 function rewriteSseEndpointStream(origin: string, local: string): Transform {
   let pending = "";
-  let endpointEvent = false;
   let afterCr = false;
+  let lines: Array<{ text: string; ending: string }> = [];
   const decoder = new StringDecoder("utf8");
-  const rewriteLine = (line: string): string => {
-    if (line.length === 0) endpointEvent = false;
-    if (line.startsWith("event:")) endpointEvent = line.slice(6).trim() === "endpoint";
-    if (!endpointEvent) return line;
-    return line.replace(/^(data: ?)(.*)$/, (_match, prefix: string, value: string) =>
-      `${prefix}${rewriteEndpoint(value, origin, local)}`);
+  // SSE 的 event 字段可以晚于 data；空行才决定整条事件的类型与 data 值。
+  const dispatch = (): string => {
+    let event = "";
+    const data: Array<{ index: number; prefix: string; value: string }> = [];
+    for (const [index, line] of lines.entries()) {
+      const colon = line.text.indexOf(":");
+      const field = colon < 0 ? line.text : line.text.slice(0, colon);
+      const offset = colon < 0 ? line.text.length : colon + 1 + (line.text[colon + 1] === " " ? 1 : 0);
+      const value = line.text.slice(offset);
+      if (field === "event") event = value;
+      else if (field === "data") data.push({ index, prefix: line.text.slice(0, offset), value });
+    }
+    if (event === "endpoint" && data.length > 0) {
+      const value = data.map(line => line.value).join("\n");
+      const rewritten = rewriteEndpoint(value, origin, local);
+      if (rewritten !== value) {
+        const values = rewritten.split("\n");
+        for (const [index, line] of data.entries()) {
+          // 没有冒号的 data 字段值为空，不可能成为被重写的首行。
+          lines[line.index]!.text = line.prefix + values[index];
+        }
+      }
+    }
+    const output = lines.map(line => line.text + line.ending).join("");
+    lines = [];
+    return output;
   };
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       const text = decoder.write(chunk);
       if (text.length === 0) { callback(); return; }
       let start = 0;
-      // CR 立即结束一行；若下个 chunk 以 LF 开头，只补齐原始 CRLF，不能再解析为空行。
+      // CR 已经结束一行；后续 LF 只补齐其换行，不制造第二个空行。
       if (afterCr) {
         afterCr = false;
-        if (text[0] === "\n") { this.push("\n"); start = 1; }
+        if (text[0] === "\n") {
+          if (lines.length > 0) lines[lines.length - 1]!.ending += "\n";
+          else this.push("\n");
+          start = 1;
+        }
       }
       for (let cursor = start; cursor < text.length; cursor++) {
         const char = text[cursor];
@@ -217,14 +241,16 @@ function rewriteSseEndpointStream(origin: string, local: string): Transform {
           if (text[cursor + 1] === "\n") { ending = "\r\n"; cursor++; }
           else if (cursor === text.length - 1) afterCr = true;
         }
-        this.push(rewriteLine(line) + ending);
+        lines.push({ text: line, ending });
+        if (line.length === 0) this.push(dispatch());
         start = cursor + 1;
       }
       pending += text.slice(start);
       callback();
     },
     flush(callback) {
-      callback(null, rewriteLine(pending + decoder.end()));
+      // EOF 不派发缺少空行的 SSE 事件；未完成事件原样透传。
+      callback(null, lines.map(line => line.text + line.ending).join("") + pending + decoder.end());
     }
   });
 }
