@@ -2,6 +2,38 @@
 
 All notable changes to `paseo-agy-acp` are recorded here.
 
+## 2.7.0 - 2026-10-27
+
+### Added
+
+- Add read-only session-scoped skill resources through MCP, including skill
+  bodies and relative resource files with workspace and home configuration
+  discovery.
+- Add optional native daemon-context negotiation, diagnostic stage timing,
+  installation doctor/prepare commands, and capability-aware queue feedback.
+
+### Fixed
+
+- Harden NDJSON UTF-8 framing, cancellation races, EOF and signal shutdown,
+  backpressure cleanup, MCP lifecycle closure, blank-turn/error settlement,
+  and concrete model tracking after model changes.
+- Preserve endpoint rewriting across SSE field order, CR/LF/CRLF delimiters and
+  chunk boundaries while leaving ordinary response URLs unchanged.
+- Preserve the v2.6.1 official 1.4.3 TOOL presentation, pins, receipts and
+  fail-closed runtime integrity checks.
+
+### Compatibility and verification
+
+- Upstream remains Registry `antigravity-acp` 1.4.3. Independently verified
+  with Paseo 0.13.2 on Linux x86_64, including skill resource reads, real text
+  and tool turns, SSE variants, shutdown cleanup and workspace isolation.
+- Complete validation: 57 test files, 357 passed and one conditional skip;
+  typecheck, build, architecture and secret scans passed. npm 12 package-content
+  compatibility passed on this release tree.
+- Complete Paseo daemon/UI, account isolation, Paseo 0.12.0 and other operating
+  systems were not retested.
+
+
 ## 2.6.1 - 2026-10-26
 
 ### Fixed

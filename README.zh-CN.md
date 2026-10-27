@@ -3,7 +3,7 @@
 与 Paseo 内置 Antigravity 共存，同时登录两个 Antigravity Pro 账号
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-2.6.1-blue?style=flat-square)](./package.json)
+[![Version](https://img.shields.io/badge/version-2.7.0-blue?style=flat-square)](./package.json)
 [![npm](https://img.shields.io/npm/v/paseo-agy-acp?style=flat-square)](https://www.npmjs.com/package/paseo-agy-acp)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen?style=flat-square)](./package.json)
 [![ACP](https://img.shields.io/badge/ACP-NDJSON%20v1-8A2BE2?style=flat-square)](https://agentclientprotocol.com)
@@ -14,8 +14,8 @@ Paseo 从 v0.11.0 起内置了 Antigravity provider。`paseo-agy-acp` 作为独�
 provider 和它共存，Paseo 就可以同时登录两个 Antigravity Pro 账号，把日常工作
 分给不同的账号来调度。
 
-**上游运行时：Registry `antigravity-acp` 1.4.3。** v2.6.1 修复托管 Linux
-x86_64 运行时向工作区写入内置技能文件的问题，同时保留内置和用户技能查询、读取能力。
+**上游运行时：Registry `antigravity-acp` 1.4.3。** v2.7.0 增加协议生命周期加固、
+只读技能资源、模型跟踪和诊断能力，并保留 v2.6.1 的工作区完整性修复。
 
 ![Paseo 中 Antigravity 与 Antigravity Pro 同时可用](./docs/images/antigravity-and-antigravity-pro.png)
 
@@ -102,9 +102,9 @@ Paseo / Generic ACP client
 每个 connector 进程运行一个官方内核子进程。Admission 是可选项，但当一个
 Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 
-本次适配器验证在 Linux x86_64 上使用隔离 fake kernel 和本地 MCP endpoint。
-本机安装的是 Paseo v0.12.0；本补丁未完成 Paseo v0.13.0、真实 daemon/UI、
-真实账号隔离或其他操作系统的验收，详见
+v2.7.0 在 Linux x86_64 上使用本机 Paseo v0.13.2 ACP 客户端和官方内核 1.4.3
+完成了新会话、技能资源、文本/工具回合、关闭清理和工作区隔离冒烟。本次未重新
+验收完整 Paseo daemon/UI、账号隔离、Paseo 0.12.0 或其他操作系统，详见
 [验收范围](docs/operations/paseo-adapter-verification.md)。
 
 <!-- readme:requirements -->
@@ -126,7 +126,7 @@ Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 ### 1. 完成认证
 
 ```bash
-npx -y paseo-agy-acp@2.6.1 --login
+npx -y paseo-agy-acp@2.7.0 --login
 ```
 
 第一次运行会下载并配置官方内核 1.4.3。下载约 320 MiB，放在 `~/.local/opt/`。
@@ -140,7 +140,7 @@ OAuth 由官方内核完成。Token 保留在内核自己的状态中，本适�
 ```bash
 export AGY_ACP_STATE_DIR="$HOME/.local/state/paseo-agy-acp/account-name"
 install -d -m 700 "$AGY_ACP_STATE_DIR"
-npx -y --package=paseo-agy-acp@2.6.1 \
+npx -y --package=paseo-agy-acp@2.7.0 \
   agy-acp-prepare-state "$AGY_ACP_STATE_DIR"
 ```
 
@@ -159,7 +159,7 @@ provider id 是 `agents.providers` 下的键：
       "paseo-agy-acp": {
         "extends": "acp",
         "label": "Antigravity Pro",
-        "command": ["npx", "-y", "paseo-agy-acp@2.6.1"],
+        "command": ["npx", "-y", "paseo-agy-acp@2.7.0"],
         "env": {
           "AGY_ACP_ADMISSION_ENABLED": "true",
           "AGY_ACP_STATE_DIR": "/home/YOU/.local/state/paseo-agy-acp/account-name"

@@ -3,7 +3,7 @@
 Coexist with Paseo's built-in Antigravity and sign in two Antigravity Pro accounts
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-2.6.1-blue?style=flat-square)](./package.json)
+[![Version](https://img.shields.io/badge/version-2.7.0-blue?style=flat-square)](./package.json)
 [![npm](https://img.shields.io/npm/v/paseo-agy-acp?style=flat-square)](https://www.npmjs.com/package/paseo-agy-acp)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen?style=flat-square)](./package.json)
 [![ACP](https://img.shields.io/badge/ACP-NDJSON%20v1-8A2BE2?style=flat-square)](https://agentclientprotocol.com)
@@ -14,9 +14,9 @@ Since v0.11.0, Paseo includes a built-in Antigravity provider. `paseo-agy-acp`
 coexists with it as an independent provider, so Paseo can sign in two
 Antigravity Pro accounts and dispatch everyday work to different accounts.
 
-**Upstream runtime: Registry `antigravity-acp` 1.4.3.** Version 2.6.1 keeps
-built-in skill files out of the workspace on the managed Linux x86_64 runtime
-while preserving built-in and user skill lookup.
+**Upstream runtime: Registry `antigravity-acp` 1.4.3.** Version 2.7.0 adds
+protocol lifecycle hardening, read-only skill resources, model tracking and
+operational diagnostics while preserving the v2.6.1 workspace-integrity fix.
 
 ![Antigravity and Antigravity Pro both available in Paseo](./docs/images/antigravity-and-antigravity-pro.png)
 
@@ -115,10 +115,11 @@ The adapter runs one official kernel child per connector process. Admission is
 optional but recommended whenever one Antigravity account serves concurrent
 Paseo agents.
 
-Current adapter checks use isolated fake kernels and local MCP endpoints on
-Linux x86_64. The installed Paseo version is v0.12.0; this patch does not claim
-verified Paseo v0.13.0, real daemon/UI, real account isolation, or other operating
-system acceptance. See the [verification scope](docs/operations/paseo-adapter-verification.md).
+Version 2.7.0 was independently smoke-tested on Linux x86_64 with the installed
+Paseo v0.13.2 ACP client and official Antigravity ACP 1.4.3. Checks covered
+new sessions, skill resources, text/tool turns, shutdown cleanup and workspace
+isolation. Complete Paseo daemon/UI, account isolation, Paseo 0.12.0 and other
+operating systems were not retested. See the [verification scope](docs/operations/paseo-adapter-verification.md).
 
 <!-- readme:requirements -->
 ## Requirements
@@ -140,7 +141,7 @@ wrapper. A different existing path is used as-is.
 ### 1. Authenticate
 
 ```bash
-npx -y paseo-agy-acp@2.6.1 --login
+npx -y paseo-agy-acp@2.7.0 --login
 ```
 
 The first run downloads and configures official kernel 1.4.3. That download is
@@ -157,7 +158,7 @@ delegation.
 ```bash
 export AGY_ACP_STATE_DIR="$HOME/.local/state/paseo-agy-acp/account-name"
 install -d -m 700 "$AGY_ACP_STATE_DIR"
-npx -y --package=paseo-agy-acp@2.6.1 \
+npx -y --package=paseo-agy-acp@2.7.0 \
   agy-acp-prepare-state "$AGY_ACP_STATE_DIR"
 ```
 
@@ -176,7 +177,7 @@ Add or update the provider in `$PASEO_HOME/config.json` or
       "paseo-agy-acp": {
         "extends": "acp",
         "label": "Antigravity Pro",
-        "command": ["npx", "-y", "paseo-agy-acp@2.6.1"],
+        "command": ["npx", "-y", "paseo-agy-acp@2.7.0"],
         "env": {
           "AGY_ACP_ADMISSION_ENABLED": "true",
           "AGY_ACP_STATE_DIR": "/home/YOU/.local/state/paseo-agy-acp/account-name"
