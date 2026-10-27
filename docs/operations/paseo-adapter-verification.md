@@ -16,7 +16,24 @@ npx vitest run tests/official-kernel-observability.test.ts tests/official-kernel
 
 `official-kernel-observability` 使用可注入时钟检查排队节流、能力协商、旧客户端兼容和阶段耗时。`paseo-proxy-lifecycle` 覆盖排队反馈不会掩盖内核空轮次等代理行为。
 
-这些测试验证代理协议和生命周期，不证明真实 Paseo UI、真实官方内核或账号隔离已经完成端到端验收。本轮使用本机 Paseo `0.13.2` ACP 客户端完成隔离技能资源和工具读取冒烟；完整 daemon/UI、账号隔离、Paseo 0.12.0 和其他操作系统仍未验收。
+`official-kernel-smoke-script` 启动严格校验握手的隔离内核，验证手动冒烟脚本发送的是 `clientCapabilities`，并与 Paseo 的文件和终端能力声明一致。
+
+### 固定版本真实 Paseo 客户端契约
+
+CI 在独立目录安装 `@getpaseo/server@0.13.2`，使用其真实 `ACPAgentClient` 运行以下套件。该依赖只用于测试，不加入产品依赖，也不启动 daemon 或访问 Google 账号。缺少依赖或版本不符会直接失败，不会跳过。
+
+```bash
+npm install --prefix .tmp-paseo-client --ignore-scripts --no-audit --no-fund --save-exact @getpaseo/server@0.13.2
+npm run test:paseo-client
+```
+
+已有独立安装时，可将 `PASEO_COMPAT_CLIENT_ROOT` 指向能解析 `@getpaseo/server` 的安装根目录。测试仍严格检查版本为 `0.13.2`。
+
+`paseo-client-compat.test.mjs` 通过真实客户端、适配器子进程和隔离内核验证新建会话、冷启动加载与恢复、历史读取、`session/set_model`、许可拒绝、等待许可时取消，以及关闭后内核和 MCP 资源释放。
+
+跨主机用例使用本地 MCP 测试服务模拟远端委派工具，验证工具目录、目标主机参数、认证头、会话头、查询参数和协议版本降级。它验证适配器的透传边界，不证明真实的多主机连接或远端 agent 已完成端到端验收。
+
+这些测试不证明真实 Paseo UI、真实官方内核或账号隔离已经完成端到端验收。此前使用本机 Paseo `0.13.2` ACP 客户端完成了隔离技能资源和工具读取冒烟；完整 daemon/UI、账号隔离、Paseo 0.12.0 和其他操作系统仍未验收。
 
 ## 排队反馈与诊断
 

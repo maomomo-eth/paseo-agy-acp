@@ -26,3 +26,9 @@ jobs:
 
       - name: Validate
         run: npm run validate
+
+      - name: Install pinned Paseo compatibility client
+        run: npm install --prefix .tmp-paseo-client --ignore-scripts --no-audit --no-fund --save-exact @getpaseo/server@0.13.2
+
+      - name: Test real Paseo ACP client compatibility
+        run: npm run test:paseo-client

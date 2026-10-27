@@ -68,7 +68,10 @@ try {
   const initialized = await request(1, "initialize", {
     protocolVersion: 1,
     clientInfo: { name: "official-kernel-smoke", version: "2.7.0" },
-    capabilities: {}
+    clientCapabilities: {
+      fs: { readTextFile: false, writeTextFile: false },
+      terminal: true
+    }
   });
   if (initialized.error) throw new Error(`initialize failed: ${JSON.stringify(initialized.error)}`);
   const agentInfo = initialized.result?.agentInfo ?? {};
