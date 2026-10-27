@@ -102,16 +102,21 @@ Paseo / Generic ACP client
 每个 connector 进程运行一个官方内核子进程。Admission 是可选项，但当一个
 Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 
-v2.7.0 在 Linux x86_64 上使用本机 Paseo v0.13.2 ACP 客户端和官方内核 1.4.3
-完成了新会话、技能资源、文本/工具回合、关闭清理和工作区隔离冒烟。本次未重新
-验收完整 Paseo daemon/UI、账号隔离、Paseo 0.12.0 或其他操作系统，详见
-[验收范围](docs/operations/paseo-adapter-verification.md)。
+v2.7.0 在 Linux x86_64 上使用 Paseo v0.13.2 与官方内核 1.4.3 完成冒烟；
+后续源码构建还通过官方内核的 Gemini 和 Claude 完成了真实跨 VM 委派与后续消息，
+并用 Gemini 验证了取消与主机重连。期间出现的间歇性 `database is locked` 经重试恢复；
+后续源码修补版已通过并发回归及完整跨 VM 复测，覆盖取消、注册禁用、隧道断开与重连后原代理继续执行；
+该轮复测没有锁错误或任务重试。
+UI、账号隔离、Paseo 0.12.0 和其他操作系统未重新验收。详见
+[验收范围](docs/operations/paseo-adapter-verification.md)与
+[跨主机指南](docs/operations/paseo-cross-host-e2e.md)。
 
 <!-- readme:requirements -->
 ## 环境要求
 
 - **Paseo** v0.12.0 或更新版本，支持自定义 ACP provider
 - **Node.js 22 或更新版本**
+- Linux x86_64 托管兼容层需使用普通用户运行
 - 可以完成官方 `oauth-personal` 的 Antigravity 账号
 - 启用 Admission 时，系统需支持 Linux 文件 owner 与 mode
 
@@ -132,6 +137,10 @@ npx -y paseo-agy-acp@2.7.0 --login
 第一次运行会下载并配置官方内核 1.4.3。下载约 320 MiB，放在 `~/.local/opt/`。
 
 OAuth 由官方内核完成。Token 保留在内核自己的状态中，本适配器不会打印。
+
+无桌面的 VM 可在电脑浏览器打开授权链接，再把完整的 localhost 回调地址粘贴回
+同一个 VM 终端。登录与运行 provider 应使用同一 Linux 用户。网络需要代理时，
+登录命令和 provider 都要配置代理，见下文。
 
 ### 2. 准备 Admission 状态
 
@@ -206,6 +215,14 @@ Paseo 会向 provider 进程提供 `PASEO_AGENT_ID` 和 `PASEO_AGENT_CWD`。只�
 高级席位、启动限速、排队超时、cooldown、权限、恢复和 policy 变更流程见
 [Admission 运维](docs/operations/admission.md)。
 
+### 网络代理
+
+需要代理时，在 provider 的 `env` 中配置 `HTTP_PROXY`、`HTTPS_PROXY`、
+`http_proxy` 和 `https_proxy`，并将 `NO_PROXY`、`no_proxy` 设置为
+`localhost,127.0.0.1,::1`，按需补充直连主机地址。
+代理地址必须在每台机器上可达；`127.0.0.1` 始终指当前机器。
+登录终端中的环境变量不会自动应用到已经运行的 Paseo daemon。完整示例见跨主机指南。
+
 ### Mode 映射
 
 | Paseo 或旧 id | 官方在线 mode |
@@ -245,7 +262,8 @@ Discovery 合并配置目录和 workspace、全局 Gemini、Agents、Codex 及 P
 `ready` 为 false 时退出码为 1，认证和 daemon 状态保持 `not_checked`。启动 agent
 前，可显式运行 `paseo-agy-acp --prepare-kernel` 安装或校验托管内核。
 
-- 官方内核必须已在本机安装；`npx` 只安装代理。
+- `npx` 安装代理包；`--prepare-kernel`、`--login` 或首次协议启动会另外下载托管
+  官方内核。
 - npm 首次运行可能编译 `better-sqlite3`，需要本机 C++ 工具链。
 - 修改 provider command、环境变量或内核路径后运行 `paseo reload`，配置对后续启动
   生效；已经运行的 agent 进程保留原配置。见
@@ -264,6 +282,7 @@ Discovery 合并配置目录和 workspace、全局 Gemini、Agents、Codex 及 P
 
 - [Admission 运维](docs/operations/admission.md)
 - [Claude / GPT-OSS 本机兼容](docs/operations/official-kernel-compat-runbook.md)
+- [跨主机部署、代理与端到端验收](docs/operations/paseo-cross-host-e2e.md)
 - [npm Trusted Publishing](docs/operations/npm-publishing.md)
 - [Changelog](CHANGELOG.md)
 - [GitHub Releases](https://github.com/tiezbro/paseo-agy-acp/releases)

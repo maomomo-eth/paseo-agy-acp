@@ -115,17 +115,25 @@ The adapter runs one official kernel child per connector process. Admission is
 optional but recommended whenever one Antigravity account serves concurrent
 Paseo agents.
 
-Version 2.7.0 was independently smoke-tested on Linux x86_64 with the installed
-Paseo v0.13.2 ACP client and official Antigravity ACP 1.4.3. Checks covered
-new sessions, skill resources, text/tool turns, shutdown cleanup and workspace
-isolation. Complete Paseo daemon/UI, account isolation, Paseo 0.12.0 and other
-operating systems were not retested. See the [verification scope](docs/operations/paseo-adapter-verification.md).
+Version 2.7.0 was smoke-tested on Linux x86_64 with Paseo v0.13.2 and official
+Antigravity ACP 1.4.3. A subsequent source build also completed real cross-VM
+delegation and follow-up messages using Gemini and Claude through the official
+kernel, plus cancellation and host reconnection using Gemini. Intermittent `database is locked`
+errors recovered after retry. Admission transaction contention has since been fixed
+in source. The patched build passed concurrency regression tests and the full
+cross-VM flow, including cancellation, disabled-host and broken-tunnel errors,
+and continued execution by the same remote agent after reconnection, with no
+lock errors or task retries in that run. UI, account isolation,
+Paseo 0.12.0 and other operating systems were not retested. See the
+[verification scope](docs/operations/paseo-adapter-verification.md) and
+[cross-host runbook](docs/operations/paseo-cross-host-e2e.md).
 
 <!-- readme:requirements -->
 ## Requirements
 
 - **Paseo** v0.12.0 or newer with custom ACP provider support
 - **Node.js 22 or newer**
+- A non-root Linux user for the managed Linux x86_64 compatibility lifecycle
 - An Antigravity account able to complete official `oauth-personal`
 - Linux filesystem ownership and mode support when Admission is enabled
 
@@ -149,6 +157,11 @@ about 320 MiB and stays under `~/.local/opt/`.
 
 OAuth is completed by the official kernel. Its tokens remain in the kernel's
 own state and are not printed by this adapter.
+
+On a headless VM, open the authorization link on your computer, then paste the
+complete localhost callback URL into the same VM terminal. Run login and the
+provider as the same Linux user. If your network requires a proxy, configure it
+for both login and the provider as described below.
 
 ### 2. Prepare Admission state
 
@@ -226,6 +239,15 @@ server for Paseo; it is not a standalone chat application.
 Advanced seat, start-rate, queue-timeout, cooldown, permission, recovery, and
 policy-change procedures are in [Admission operations](docs/operations/admission.md).
 
+### Network proxy
+
+When required, set `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy`
+in the provider's `env`. Set `NO_PROXY` and `no_proxy` to
+`localhost,127.0.0.1,::1`, adding any directly connected host addresses.
+Use a proxy address reachable from each machine; `127.0.0.1` always refers to
+that machine. Terminal exports used for login do not configure an already
+running Paseo daemon. See the cross-host runbook for complete examples.
+
 ### Mode mapping
 
 | Paseo or legacy id | Official live mode |
@@ -272,7 +294,8 @@ authentication and daemon state remain `not_checked`. Run
 `paseo-agy-acp --prepare-kernel` explicitly to install or verify the managed
 kernel before launching an agent.
 
-- The official kernel must already be installed. `npx` installs only the proxy.
+- `npx` installs the proxy package; `--prepare-kernel`, `--login` or the first
+  protocol launch downloads the managed official kernel separately.
 - The first npm run may compile `better-sqlite3` and require a local C++
   toolchain.
 - After changing provider command, environment, or kernel path, run `paseo reload`.
@@ -293,6 +316,7 @@ Current operational references:
 
 - [Admission operations](docs/operations/admission.md)
 - [Claude / GPT-OSS local compatibility](docs/operations/official-kernel-compat-runbook.md)
+- [Cross-host deployment, proxy and E2E verification](docs/operations/paseo-cross-host-e2e.md)
 - [npm Trusted Publishing](docs/operations/npm-publishing.md)
 - [Changelog](CHANGELOG.md)
 - [GitHub Releases](https://github.com/tiezbro/paseo-agy-acp/releases)

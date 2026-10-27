@@ -1,13 +1,27 @@
 # Paseo 适配器验收
 
-本文记录可重复执行的验证与范围限制。版本为 `2.7.0`；本文记录发布前后的可重复验收范围。
+本文记录 `2.7.0` 发布前后的验证层次与范围。真实跨主机验收使用后续源码提交
+`37a278d`、Paseo `0.13.2` 和官方内核 `1.4.3`；2026-10-28（UTC+8）又以该提交加
+Admission 事务争锁修补完成完整跨主机复测。
+源码提交的结果不能直接视为相同版本号的 npm 发布包已包含所有后续补丁。
+
+## 验证层次与当前结果
+
+| 层次 | 使用的组件 | 已验证范围 | 范围限制 |
+| --- | --- | --- | --- |
+| 隔离自动测试 | 适配器、隔离内核、本地 MCP 服务 | 协议、技能资源、排队、取消与关闭 | 不使用 Google 账号或真实 daemon |
+| 真实客户端契约 | 固定 `@getpaseo/server@0.13.2` 的 `ACPAgentClient`、隔离内核 | 新建、模型切换、许可、加载、恢复、MCP 透传 | 本地服务模拟远端工具 |
+| 真实跨主机 | 两个 Linux VM、两个 Paseo daemon、官方内核及已登录账号 | Gemini / Claude 委派与两轮回传；Gemini 取消、禁用连接错误及重连后继续 | Admission 修补版完整复测通过；本轮零锁错误、零任务重试 |
+| 尚待专项验收 | UI、双账号、其他系统及旧版本 | 见下文手工清单 | 不从上述结果推定通过 |
+
+复现步骤、代理配置和实测记录见[跨主机端到端验收](paseo-cross-host-e2e.md)。
 
 ## 隔离自动验收
 
 在项目根目录运行：
 
 ```bash
-npx vitest run tests/official-kernel-observability.test.ts tests/official-kernel-lifecycle-integration.test.ts tests/official-kernel-capabilities-integration.test.ts tests/paseo-proxy-lifecycle.test.ts
+npx vitest run tests/official-kernel-observability.test.ts tests/official-kernel-lifecycle-integration.test.ts tests/official-kernel-capabilities-integration.test.ts tests/paseo-proxy-lifecycle.test.ts tests/official-kernel-smoke-script.test.ts
 ```
 
 `official-kernel-lifecycle-integration` 启动真实 Node.js 子进程作为 fake kernel，通过管道运行代理的 NDJSON 协议，覆盖冷启动 `session/load`、`session/resume`、权限拒绝响应、等待权限时取消、进程退出和监听器清理。它不启动 Paseo daemon，也不访问真实账号。
@@ -33,7 +47,7 @@ npm run test:paseo-client
 
 跨主机用例使用本地 MCP 测试服务模拟远端委派工具，验证工具目录、目标主机参数、认证头、会话头、查询参数和协议版本降级。它验证适配器的透传边界，不证明真实的多主机连接或远端 agent 已完成端到端验收。
 
-这些测试不证明真实 Paseo UI、真实官方内核或账号隔离已经完成端到端验收。此前使用本机 Paseo `0.13.2` ACP 客户端完成了隔离技能资源和工具读取冒烟；完整 daemon/UI、账号隔离、Paseo 0.12.0 和其他操作系统仍未验收。
+上述自动测试不证明真实 UI、官方内核或账号隔离已经完成端到端验收。真实 daemon 与官方内核的跨主机结果单独记录在跨主机指南中；完整 UI、双账号隔离、Paseo `0.12.0` 和其他操作系统仍待验收。
 
 ## 排队反馈与诊断
 
@@ -59,7 +73,9 @@ npm run test:paseo-client
 6. 修改 provider 环境，运行 `paseo reload`，检查新 agent 生效、已有进程不被意外修改。
 7. 关闭测试 agent，检查代理、内核及 MCP bridge 资源释放。
 
-截至本次代码验收，未执行上述真实 daemon 和 UI 流程，也未重启生产 daemon 或修改用户 Paseo 配置。
+2026-10-27 已在独立测试 daemon 中覆盖真实跨主机创建、后续消息、运行中取消、provider 代理环境热加载、连接恢复及关闭清理。两轮结果通过 VM 上的随机标记和实际文件独立核对；取消测试还确认了测试子进程退出。
+
+上述清单中的冷启动加载与恢复、许可拒绝、等待许可及排队时取消、双账号隔离、真实技能资源读取和 UI 操作仍需专项验收。跨主机运行中出现过 ACP `database is locked`（`-32000`），重试后恢复。后续已复现并修复适配器 Admission 的延迟事务升级写锁竞争；入队、激活、结算三项回归测试在旧实现下均失败、修补后通过。2026-10-28（UTC+8）的修补版完整复测还覆盖了真实隧道断开、自动重连及同一远端代理续跑，两端日志零锁错误、零轮次失败，Admission 无失败或待恢复状态，任务未重试；详见[锁错误排查](paseo-cross-host-e2e.md#database-is-lockedadmission-事务争锁)。本次使用独立 A 端 daemon 和专用 VM，生产 A 端 daemon 配置未修改。
 
 取消已派发的请求后，默认最多等待内核确认 30 秒；可用 `AGY_ACP_CANCEL_TIMEOUT_MS` 配置正整数毫秒超时。内核不确认、输入 EOF 或流错误会进入关闭流程，先发送 SIGTERM，2 秒后仍未退出则发送 SIGKILL。
 
