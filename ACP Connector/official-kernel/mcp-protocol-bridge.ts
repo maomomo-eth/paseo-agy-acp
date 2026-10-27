@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { createServer, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
+import { createServer, request as httpRequest, type ClientRequest, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { Transform } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { isRecord } from "./json-rpc.js";
 
 const HARNESS_PROTOCOL_VERSION = "2026-07-28";
@@ -36,11 +37,16 @@ export class McpProtocolBridge {
     void this.#forward(request, response);
   });
   #port = 0;
+  #starting?: Promise<void>;
+  #closing?: Promise<void>;
+  #closed = false;
+  readonly #requests = new Set<ClientRequest>();
   readonly #upstreams = new Map<string, URL>();
 
   async start(): Promise<void> {
+    if (this.#closed) throw new Error("MCP protocol bridge is closed");
     if (this.#port !== 0) return;
-    await new Promise<void>((resolve, reject) => {
+    this.#starting ??= new Promise<void>((resolve, reject) => {
       this.#server.once("error", reject);
       this.#server.listen(0, "127.0.0.1", () => {
         this.#server.removeListener("error", reject);
@@ -53,14 +59,16 @@ export class McpProtocolBridge {
         resolve();
       });
     });
+    await this.#starting;
   }
 
   async register(target: string): Promise<string> {
-    await this.start();
     const upstream = new URL(target);
     if (upstream.protocol !== "http:" && upstream.protocol !== "https:") {
       throw new Error("MCP protocol bridge only forwards http and https servers");
     }
+    await this.start();
+    if (this.#closed) throw new Error("MCP protocol bridge is closed");
     const id = randomBytes(8).toString("hex");
     this.#upstreams.set(id, upstream);
     const local = new URL(`http://127.0.0.1:${this.#port}/b/${id}${upstream.pathname}`);
@@ -69,9 +77,21 @@ export class McpProtocolBridge {
   }
 
   close(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.#server.close((error) => error ? reject(error) : resolve());
-    });
+    this.#closed = true;
+    this.#closing ??= (async () => {
+      await this.#starting?.catch(() => {});
+      this.#upstreams.clear();
+      for (const request of this.#requests) request.destroy();
+      this.#requests.clear();
+      if (!this.#server.listening) return;
+      await new Promise<void>((resolve, reject) => {
+        this.#server.close((error) => error ? reject(error) : resolve());
+        // SSE 是长连接，内核退出后不能继续等待它自然结束。
+        this.#server.closeAllConnections();
+      });
+      this.#port = 0;
+    })();
+    return this.#closing;
   }
 
   async #forward(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -89,39 +109,45 @@ export class McpProtocolBridge {
       destination.pathname = upstreamPath && upstreamPath.length > 0 ? upstreamPath : "/";
       destination.search = incoming.search;
       const body = await readBody(request);
+      if (this.#closed || response.destroyed) return;
       const contentType = headerValue(request.headers["content-type"]);
       const forwardedBody = downgradeMcpInitializeBody(body, contentType);
       const headers = downgradeRequestHeaders(request.headers, destination, forwardedBody.length);
       const transport = destination.protocol === "https:" ? httpsRequest : httpRequest;
       const upstreamRequest = transport(destination, { method: request.method, headers });
+      this.#requests.add(upstreamRequest);
+      upstreamRequest.once("close", () => this.#requests.delete(upstreamRequest));
+      response.once("close", () => upstreamRequest.destroy());
       upstreamRequest.on("error", () => {
         if (!response.headersSent) response.writeHead(502).end();
         else response.end();
       });
       upstreamRequest.on("response", (upstreamResponse) => {
+        upstreamResponse.on("error", () => response.destroy());
         const responseHeaders: OutgoingHttpHeaders = { ...upstreamResponse.headers };
         delete responseHeaders["transfer-encoding"];
         delete responseHeaders["content-length"];
+        const local = `http://127.0.0.1:${this.#port}/b/${bridgeId}`;
+        if (typeof responseHeaders.location === "string") {
+          responseHeaders.location = rewriteEndpoint(responseHeaders.location, upstream.origin, local);
+        }
         response.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
         const responseType = headerValue(upstreamResponse.headers["content-type"]);
-        if (!shouldRewriteResponse(responseType)) {
+        if (responseType.toLowerCase().includes("text/event-stream")) {
+          upstreamResponse.pipe(rewriteSseEndpointStream(upstream.origin, local)).pipe(response);
+        } else {
           upstreamResponse.pipe(response);
-          return;
         }
-        upstreamResponse
-          .pipe(replaceOriginStream(upstream.origin, `http://127.0.0.1:${this.#port}/b/${bridgeId}`))
-          .pipe(response);
       });
       upstreamRequest.end(forwardedBody);
     } catch {
       if (!response.headersSent) response.writeHead(502).end();
+      else response.end();
     }
   }
 }
 
-let shared: McpProtocolBridge | undefined;
-
-export async function bridgeOfficialMcpServers(params: unknown): Promise<unknown> {
+export async function bridgeOfficialMcpServers(params: unknown, bridge: McpProtocolBridge): Promise<unknown> {
   if (!isRecord(params) || !Array.isArray(params.mcpServers)) return params;
   const servers = [];
   for (const server of params.mcpServers) {
@@ -129,8 +155,7 @@ export async function bridgeOfficialMcpServers(params: unknown): Promise<unknown
       servers.push(server);
       continue;
     }
-    shared ??= new McpProtocolBridge();
-    servers.push({ ...server, url: await shared.register(server.url) });
+    servers.push({ ...server, url: await bridge.register(server.url) });
   }
   return { ...params, mcpServers: servers };
 }
@@ -152,33 +177,82 @@ function downgradeRequestHeaders(headers: IncomingHttpHeaders, destination: URL,
   return next;
 }
 
-function replaceOriginStream(origin: string, local: string): Transform {
+function rewriteEndpoint(value: string, origin: string, local: string): string {
+  if (value.startsWith("/") && !value.startsWith("//")) return `${local}${value}`;
+  if (value === origin || value.startsWith(`${origin}/`) || value.startsWith(`${origin}?`)) {
+    return local + value.slice(origin.length);
+  }
+  return value;
+}
+
+function rewriteSseEndpointStream(origin: string, local: string): Transform {
   let pending = "";
+  let afterCr = false;
+  let lines: Array<{ text: string; ending: string }> = [];
+  const decoder = new StringDecoder("utf8");
+  // SSE 的 event 字段可以晚于 data；空行才决定整条事件的类型与 data 值。
+  const dispatch = (): string => {
+    let event = "";
+    const data: Array<{ index: number; prefix: string; value: string }> = [];
+    for (const [index, line] of lines.entries()) {
+      const colon = line.text.indexOf(":");
+      const field = colon < 0 ? line.text : line.text.slice(0, colon);
+      const offset = colon < 0 ? line.text.length : colon + 1 + (line.text[colon + 1] === " " ? 1 : 0);
+      const value = line.text.slice(offset);
+      if (field === "event") event = value;
+      else if (field === "data") data.push({ index, prefix: line.text.slice(0, offset), value });
+    }
+    if (event === "endpoint" && data.length > 0) {
+      const value = data.map(line => line.value).join("\n");
+      const rewritten = rewriteEndpoint(value, origin, local);
+      if (rewritten !== value) {
+        const values = rewritten.split("\n");
+        for (const [index, line] of data.entries()) {
+          // 没有冒号的 data 字段值为空，不可能成为被重写的首行。
+          lines[line.index]!.text = line.prefix + values[index];
+        }
+      }
+    }
+    const output = lines.map(line => line.text + line.ending).join("");
+    lines = [];
+    return output;
+  };
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
-      pending += chunk.toString("utf8");
-      const suffix = originPrefixLength(pending, origin);
-      const emit = pending.slice(0, pending.length - suffix).replaceAll(origin, local);
-      pending = pending.slice(pending.length - suffix);
-      callback(null, emit);
+      const text = decoder.write(chunk);
+      if (text.length === 0) { callback(); return; }
+      let start = 0;
+      // CR 已经结束一行；后续 LF 只补齐其换行，不制造第二个空行。
+      if (afterCr) {
+        afterCr = false;
+        if (text[0] === "\n") {
+          if (lines.length > 0) lines[lines.length - 1]!.ending += "\n";
+          else this.push("\n");
+          start = 1;
+        }
+      }
+      for (let cursor = start; cursor < text.length; cursor++) {
+        const char = text[cursor];
+        if (char !== "\r" && char !== "\n") continue;
+        const line = pending + text.slice(start, cursor);
+        pending = "";
+        let ending = char;
+        if (char === "\r") {
+          if (text[cursor + 1] === "\n") { ending = "\r\n"; cursor++; }
+          else if (cursor === text.length - 1) afterCr = true;
+        }
+        lines.push({ text: line, ending });
+        if (line.length === 0) this.push(dispatch());
+        start = cursor + 1;
+      }
+      pending += text.slice(start);
+      callback();
     },
     flush(callback) {
-      callback(null, pending.replaceAll(origin, local));
+      // EOF 不派发缺少空行的 SSE 事件；未完成事件原样透传。
+      callback(null, lines.map(line => line.text + line.ending).join("") + pending + decoder.end());
     }
   });
-}
-
-function originPrefixLength(value: string, origin: string): number {
-  const max = Math.min(origin.length - 1, value.length);
-  for (let length = max; length > 0; length -= 1) {
-    if (origin.startsWith(value.slice(value.length - length))) return length;
-  }
-  return 0;
-}
-
-function shouldRewriteResponse(contentType: string): boolean {
-  const type = contentType.toLowerCase();
-  return type.includes("json") || type.includes("text/event-stream") || type.startsWith("text/");
 }
 
 function headerValue(value: string | string[] | undefined): string {

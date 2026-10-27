@@ -21,9 +21,14 @@ export async function runOfficialKernel(options: RunOfficialKernelOptions): Prom
     env,
     version: options.version
   });
+  const stop = () => proxy.close();
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
   try {
     await proxy.start();
   } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
     }

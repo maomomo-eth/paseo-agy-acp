@@ -1,8 +1,6 @@
-<div align="center">
-
 # paseo-agy-acp
 
-**Coexist with Paseo's built-in Antigravity and sign in two Antigravity Pro accounts**
+Coexist with Paseo's built-in Antigravity and sign in two Antigravity Pro accounts
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-2.6.1-blue?style=flat-square)](./package.json)
@@ -12,8 +10,6 @@
 
 [English](./README.md) | [中文](./README.zh-CN.md) | [Changelog](./CHANGELOG.md)
 
-</div>
-
 Since v0.11.0, Paseo includes a built-in Antigravity provider. `paseo-agy-acp`
 coexists with it as an independent provider, so Paseo can sign in two
 Antigravity Pro accounts and dispatch everyday work to different accounts.
@@ -22,13 +18,13 @@ Antigravity Pro accounts and dispatch everyday work to different accounts.
 built-in skill files out of the workspace on the managed Linux x86_64 runtime
 while preserving built-in and user skill lookup.
 
-<img src="./docs/images/antigravity-and-antigravity-pro.png" alt="Antigravity and Antigravity Pro both available in Paseo" width="640">
+![Antigravity and Antigravity Pro both available in Paseo](./docs/images/antigravity-and-antigravity-pro.png)
 
 The settings list shows the display name. Use the provider id in `config.json`
 and when creating an agent.
 
 | | **Antigravity Pro** (this adapter) | **Antigravity** (built into Paseo) |
-|---|---|---|
+| --- | --- | --- |
 | Display name | Antigravity Pro | Antigravity |
 | Provider id | `paseo-agy-acp` | `antigravity` |
 | Process | official ACP kernel `agy_acp_server` | host `agy`, resolved from `PATH` |
@@ -57,10 +53,10 @@ ACP provides the protocol. A production Paseo provider still needs product
 behavior around that protocol:
 
 | Need | Direct generic ACP connection | `paseo-agy-acp` |
-|---|---|---|
+| --- | --- | --- |
 | Official execution chain | Can start an ACP server | Keeps OAuth, models, tools, MCP, and inference in Google's official kernel |
 | Paseo context | No product-specific guarantee | Injects Paseo daemon and workspace/agent context into official prompts |
-| Modes and MCP | Client and kernel shapes may differ | Maps Paseo modes and rewrites MCP `http` declarations to the official `sse` shape |
+| Modes and MCP | Client and kernel shapes may differ | Maps Paseo modes, preserves native MCP `http`/`sse`, and applies necessary protocol compatibility |
 | Multi-agent bursts | Prompts can reach the kernel together | Uses one durable, account-wide Admission queue across connector processes |
 | Slash command discovery | Official command updates omit local skills | Adds user-invocable Gemini, Agents, Codex, configured, and workspace skills |
 | Empty turns | An output-free `end_turn` can look successful | Returns an explicit JSON-RPC error instead of recording silent success |
@@ -110,7 +106,7 @@ Paseo / Generic ACP client
 ```
 
 | Layer | Responsibility | License boundary |
-|---|---|---|
+| --- | --- | --- |
 | Paseo | Agent lifecycle, workspace, delegation, provider configuration | Paseo project |
 | `paseo-agy-acp` | Paseo-specific ACP adaptation and Admission | Apache-2.0; published on npm |
 | Official `agy_acp_server` | Authentication, model catalog, tools, MCP, and inference | Google proprietary software; local install only |
@@ -119,11 +115,10 @@ The adapter runs one official kernel child per connector process. Admission is
 optional but recommended whenever one Antigravity account serves concurrent
 Paseo agents.
 
-Version 2.6.1 was smoke-tested on Linux x86_64 with the Paseo v0.13.0 ACP
-client and official Antigravity ACP 1.4.3. Checks covered new sessions, modes,
-commands, text/tool turns, and skill lookup without workspace writes. Paseo
-v0.12.0, the complete daemon/UI flow, and other operating systems were not
-retested for this patch.
+Current adapter checks use isolated fake kernels and local MCP endpoints on
+Linux x86_64. The installed Paseo version is v0.12.0; this patch does not claim
+verified Paseo v0.13.0, real daemon/UI, real account isolation, or other operating
+system acceptance. See the [verification scope](docs/operations/paseo-adapter-verification.md).
 
 <!-- readme:requirements -->
 ## Requirements
@@ -209,9 +204,9 @@ If an existing config still uses the key `antigravity` for this adapter, rename
 it to `paseo-agy-acp`. While the old key remains, Paseo hides the built-in
 Antigravity provider and routes the id `antigravity` to this adapter.
 
-### 4. Restart and verify
+### 4. Reload and verify
 
-Restart the Paseo daemon, create an agent with provider `paseo-agy-acp`,
+Run `paseo reload`, then create an agent with provider `paseo-agy-acp`,
 select a supported mode, and send a simple prompt. `npx` starts a stdio ACP
 server for Paseo; it is not a standalone chat application.
 
@@ -221,7 +216,7 @@ server for Paseo; it is not a standalone chat application.
 ### Essential environment
 
 | Variable | Purpose |
-|---|---|
+| --- | --- |
 | `PASEO_AGY_ACP_OFFICIAL_BIN` | Absolute official kernel wrapper or `.par` path |
 | `PASEO_HOME` | Optional Paseo home; defaults to `~/.paseo` |
 | `AGY_ACP_ADMISSION_ENABLED` | `true` / `1` enables the prompt fence |
@@ -233,7 +228,7 @@ policy-change procedures are in [Admission operations](docs/operations/admission
 ### Mode mapping
 
 | Paseo or legacy id | Official live mode |
-|---|---|
+| --- | --- |
 | `default` | `default` |
 | `accept-edits` | `auto_edit` |
 | `dangerously-skip-permissions` | `yolo` |
@@ -253,19 +248,35 @@ kernel is the only execution path.
 
 ### Skill roots
 
-Discovery reads configured roots from workspace `.agents/skills.json` or
-`skills.json`, and from global `~/.gemini/config/skills.json`. Default roots
-cover workspace Agents/Codex directories and global Gemini/Agents/Codex
-directories. Each skill directory must contain `SKILL.md` frontmatter with a
-usable name and description.
+Discovery combines configured roots with workspace and global Gemini, Agents,
+Codex and Paseo compatibility directories, respecting `GEMINI_HOME` and
+`PASEO_HOME`. Paseo documents `.agents/skills`, `.claude/skills`, and
+`.codex/skills` as installation locations; `.paseo/skills` is an additional
+compatibility location. Each skill needs `SKILL.md` name and description
+frontmatter. The session-scoped `paseo_skills` MCP server exposes
+`list_skills` and `read_skill`, so the kernel can read discovered skill text
+and relative resource files without copying them into the workspace. Reads
+are limited to the discovered skill directory and 1 MiB per file.
+
+See [adapter verification](docs/operations/paseo-adapter-verification.md) for
+queue notices, optional stderr diagnostics, native context opt-in and the
+remaining real Paseo acceptance steps.
 
 <!-- readme:operations -->
 ## Operations and troubleshooting
 
+Run `paseo-agy-acp --doctor` for a read-only JSON check of the local kernel
+executable and managed receipt. It exits with status 1 when `ready` is false;
+authentication and daemon state remain `not_checked`. Run
+`paseo-agy-acp --prepare-kernel` explicitly to install or verify the managed
+kernel before launching an agent.
+
 - The official kernel must already be installed. `npx` installs only the proxy.
 - The first npm run may compile `better-sqlite3` and require a local C++
   toolchain.
-- Restart Paseo after changing provider command, environment, or kernel path.
+- After changing provider command, environment, or kernel path, run `paseo reload`.
+  Changes apply to future launches; existing agent processes keep their configuration.
+  See [Paseo custom providers](https://paseo.sh/docs/custom-providers).
 - Enabled Admission with missing identity, unsafe state permissions, or invalid
   policy refuses to start instead of silently running unfenced.
 - A turn that stays `running` after visible assistant output is often a
@@ -275,7 +286,7 @@ usable name and description.
 - Tool quality, image generation, backend quota, and provider error text remain
   owned by the official kernel and Google backend.
 - For reproducible upgrades or rollback, pin a three-part npm version in the
-  provider command and restart Paseo.
+  provider command, run `paseo reload`, and launch a new agent.
 
 Current operational references:
 

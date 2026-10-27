@@ -99,6 +99,68 @@ description: default
 });
 
 describe("Skill Commands Discovery", () => {
+  it.each([
+    { location: "workspace", relative: false }, { location: "workspace", relative: true },
+    { location: "paseo-home", relative: false }, { location: "paseo-home", relative: true },
+    { location: "default-home", relative: false }, { location: "default-home", relative: true }
+  ])("从 $location 的 Paseo skills.json 发现技能（relative=$relative）", ({ location, relative }) => {
+    const ws = tempDir("ws-paseo-config-");
+    const home = tempDir("home-paseo-config-");
+    const paseoHome = tempDir("custom-paseo-config-");
+    const root = tempDir("external-paseo-skills-");
+    const skill = path.join(root, "external-paseo");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(path.join(skill, "SKILL.md"), "---\nname: external-paseo\ndescription: 外部 Paseo 技能\n---\n", "utf8");
+    const directory = location === "workspace" ? path.join(ws, ".paseo")
+      : location === "paseo-home" ? paseoHome : path.join(home, ".paseo");
+    mkdirSync(directory, { recursive: true });
+    // 相对路径沿用现有约定：工作区基于 cwd，全局声明基于用户 home。
+    const entry = relative ? path.relative(location === "workspace" ? ws : home, root) : root;
+    writeFileSync(path.join(directory, "skills.json"), JSON.stringify({ entries: [{ path: entry }] }), "utf8");
+    const env = { HOME: home, PASEO_HOME: paseoHome };
+    expect(resolveSkillRoots(ws, env)).toContain(root);
+    expect(augmentAvailableCommands([], ws, env)).toContainEqual({ name: "external-paseo", description: "外部 Paseo 技能" });
+  });
+
+  it("Paseo 配置与目录发现重复时去重，工作区声明优先于全局声明", () => {
+    const ws = tempDir("ws-paseo-config-order-");
+    const home = tempDir("home-paseo-config-order-");
+    const paseoHome = tempDir("custom-paseo-config-order-");
+    const wsRoot = path.join(ws, ".paseo/skills");
+    const globalRoot = path.join(paseoHome, "skills");
+    for (const [root, description] of [[wsRoot, "工作区声明"], [globalRoot, "全局声明"]]) {
+      const skill = path.join(root, "shared-paseo-config");
+      mkdirSync(skill, { recursive: true });
+      writeFileSync(path.join(skill, "SKILL.md"), `---\nname: shared-paseo-config\ndescription: ${description}\n---\n`, "utf8");
+    }
+    writeFileSync(path.join(ws, ".paseo/skills.json"), JSON.stringify({ entries: [{ path: wsRoot }, { path: wsRoot }] }), "utf8");
+    writeFileSync(path.join(paseoHome, "skills.json"), JSON.stringify({ entries: [{ path: globalRoot }] }), "utf8");
+    const env = { HOME: home, PASEO_HOME: paseoHome };
+    expect(resolveSkillRoots(ws, env)).toEqual([wsRoot, globalRoot]);
+    expect(discoverSkillCommands(ws, env)).toEqual([{ name: "shared-paseo-config", description: "工作区声明" }]);
+  });
+
+  it("发现 Paseo 工作区、默认 home 和自定义 home 技能，并保持工作区优先", () => {
+    const ws = tempDir("ws-paseo-");
+    const home = tempDir("home-paseo-");
+    const paseoHome = tempDir("custom-paseo-");
+    const roots = [path.join(ws, ".paseo/skills"), path.join(paseoHome, "skills"), path.join(home, ".paseo/skills")];
+    for (const [index, root] of roots.entries()) {
+      for (const name of [`paseo-${index}`, "shared-paseo"]) {
+        const dir = path.join(root, name);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: 来源 ${index}\n---\n`, "utf8");
+      }
+    }
+    const env = { HOME: home, PASEO_HOME: paseoHome };
+    expect(resolveSkillRoots(ws, env)).toEqual(expect.arrayContaining(roots));
+    const commands = augmentAvailableCommands([{ name: "plan", description: "内核命令" }], ws, env);
+    expect(commands).toEqual(expect.arrayContaining(roots.map((_, index) => ({ name: `paseo-${index}`, description: `来源 ${index}` }))));
+    expect(commands.filter(command => command.name === "shared-paseo")).toEqual([{ name: "shared-paseo", description: "来源 0" }]);
+    expect(resolveSkillRoots(undefined, { HOME: home })).toEqual([path.join(home, ".paseo/skills")]);
+    expect(resolveSkillRoots(undefined, { HOME: home, PASEO_HOME: path.join(home, ".paseo") })).toHaveLength(1);
+  });
+
   it("discovers skills from configured skills.json", () => {
     const ws = tempDir("ws-custom-");
     const customSkillDir = tempDir("custom-skill-target-");
@@ -227,4 +289,3 @@ description: Default location skill
     );
   });
 });
-

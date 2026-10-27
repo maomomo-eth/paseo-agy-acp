@@ -49,10 +49,55 @@ export function extractSessionId(params: unknown): string | undefined {
       : undefined;
 }
 
-export function extractCwd(params: unknown): string | undefined {
-  if (!isRecord(params)) return undefined;
-  return typeof params.cwd === "string" && params.cwd.trim().length > 0
-    ? params.cwd.trim()
-    : undefined;
+export function extractCwd(
+  params: unknown,
+  environment: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  const cwd = isRecord(params) && typeof params.cwd === "string" ? params.cwd.trim() : "";
+  return cwd || environment.PASEO_AGENT_CWD?.trim() || undefined;
 }
 
+/** 官方 1.4.3 原生 append 是会话快照；默认动态模式继续逐轮读取。 */
+export class PaseoSessionContext {
+  #nativeSupported = false;
+  readonly #nativeSessions = new Set<string>();
+
+  constructor(private readonly environment: NodeJS.ProcessEnv = process.env) {}
+
+  observeInitialize(result: unknown): void {
+    const capabilities = isRecord(result) && isRecord(result.agentCapabilities) ? result.agentCapabilities : {};
+    const meta = isRecord(capabilities._meta) ? capabilities._meta : {};
+    const agy = isRecord(meta.antigravity) ? meta.antigravity : {};
+    this.#nativeSupported = isRecord(agy.systemPrompt) && agy.systemPrompt.append === true;
+  }
+
+  async prepareSession(params: unknown): Promise<{ params: unknown; native: boolean }> {
+    const native = this.#nativeSupported && this.environment.PASEO_AGY_ACP_NATIVE_SYSTEM_CONTEXT === "1";
+    if (!native || !isRecord(params)) return { params, native: false };
+    const append = await readPaseoDaemonAppendSystemPrompt(this.environment);
+    if (!append) return { params, native: true };
+    const meta = isRecord(params._meta) ? params._meta : {};
+    const agy = isRecord(meta.antigravity) ? meta.antigravity : {};
+    const systemPrompt = isRecord(agy.systemPrompt) ? agy.systemPrompt : {};
+    const prior = typeof systemPrompt.append === "string" ? systemPrompt.append : "";
+    return {
+      native: true,
+      params: { ...params, _meta: { ...meta, antigravity: { ...agy, systemPrompt: {
+        ...systemPrompt, append: [prior, append].filter(Boolean).join("\n\n")
+      } } } }
+    };
+  }
+
+  bindSession(sessionId: string, native: boolean): void {
+    if (native) this.#nativeSessions.add(sessionId);
+    else this.#nativeSessions.delete(sessionId);
+  }
+
+  forgetSession(sessionId: string): void { this.#nativeSessions.delete(sessionId); }
+
+  async injectPrompt(params: unknown): Promise<unknown> {
+    const sessionId = extractSessionId(params);
+    if (sessionId && this.#nativeSessions.has(sessionId)) return params;
+    return injectPaseoContext(params, this.environment);
+  }
+}

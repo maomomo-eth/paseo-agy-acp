@@ -32,7 +32,7 @@ function harness() {
     },
     reply(message: JsonRpcMessage) { child.stdout.write(encodeNdjson(message)); },
     cancel() { stdin.write(encodeNdjson({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: "test-session" } })); },
-    async close() { child.emit("exit", 0); await running; }
+    async close() { child.emit("close", 0); await running; }
   };
 }
 

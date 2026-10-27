@@ -257,7 +257,9 @@ export class AdmissionTurnCoordinator {
       ) {
         this.#controller.completeLiveTurn(lease, now, {
           outcome: "failed",
-          failure: failureFromAgyError(error)
+          failure: error instanceof AgyTerminalProviderError && error.failure !== undefined
+            ? error.failure
+            : failureFromAgyError(error)
         });
         return;
       }

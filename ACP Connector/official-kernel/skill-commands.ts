@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { resolvePaseoHome } from "../acp/session/paseo-context.js";
 
 export interface AvailableCommand {
   name: string;
@@ -104,9 +105,11 @@ export function parseFrontmatter(content: string): {
   return { name, description, userInvocable };
 }
 
-export function resolveSkillRoots(cwd?: string): string[] {
+export function resolveSkillRoots(cwd?: string, environment: NodeJS.ProcessEnv = process.env): string[] {
   const roots = new Set<string>();
-  const home = homedir();
+  const home = environment.HOME || homedir();
+  const geminiHome = environment.GEMINI_HOME?.trim() || path.join(home, ".gemini");
+  const paseoHome = resolvePaseoHome(environment);
 
   const readSkillsJson = (filePath: string, baseDir: string): void => {
     if (!existsSync(filePath)) return;
@@ -139,6 +142,7 @@ export function resolveSkillRoots(cwd?: string): string[] {
 
   // 1. Workspace declared configs in skills.json
   if (cwd && existsSync(cwd)) {
+    readSkillsJson(path.join(cwd, ".paseo/skills.json"), cwd);
     readSkillsJson(path.join(cwd, ".agents/skills.json"), cwd);
     readSkillsJson(path.join(cwd, "skills.json"), cwd);
     readSkillsJson(path.join(cwd, ".codex/skills.json"), cwd);
@@ -148,8 +152,11 @@ export function resolveSkillRoots(cwd?: string): string[] {
   // 2. Workspace default skill directories
   if (cwd && existsSync(cwd)) {
     const wsDefaults = [
+      path.join(cwd, ".paseo/skills"),
       path.join(cwd, ".agents/skills"),
       path.join(cwd, ".codex/skills"),
+      path.join(cwd, ".claude/skills"),
+      path.join(cwd, ".gemini/skills"),
       path.join(cwd, "skills")
     ];
     for (const dir of wsDefaults) {
@@ -158,15 +165,23 @@ export function resolveSkillRoots(cwd?: string): string[] {
   }
 
   // 3. Global declared configs in skills.json
-  readSkillsJson(path.join(home, ".gemini/config/skills.json"), home);
+  // 沿用现有全局声明的 home 相对路径语义；默认与自定义 Paseo home 均可配置。
+  for (const directory of new Set([paseoHome, path.join(home, ".paseo")])) {
+    readSkillsJson(path.join(directory, "skills.json"), home);
+  }
+  readSkillsJson(path.join(geminiHome, "config/skills.json"), home);
   readSkillsJson(path.join(home, ".agents/skills.json"), home);
   readSkillsJson(path.join(home, ".codex/skills.json"), home);
 
   // 4. Global default skill directories
   const globalDefaults = [
-    path.join(home, ".gemini/config/skills"),
+    path.join(paseoHome, "skills"),
+    path.join(home, ".paseo/skills"),
+    path.join(geminiHome, "config/skills"),
+    path.join(geminiHome, "antigravity-cli/skills"),
     path.join(home, ".agents/skills"),
-    path.join(home, ".codex/skills")
+    path.join(home, ".codex/skills"),
+    path.join(home, ".claude/skills")
   ];
   for (const dir of globalDefaults) {
     if (existsSync(dir)) roots.add(dir);
@@ -175,43 +190,29 @@ export function resolveSkillRoots(cwd?: string): string[] {
   return Array.from(roots);
 }
 
-export function discoverSkillCommands(cwd?: string): AvailableCommand[] {
-  const roots = resolveSkillRoots(cwd);
+export function discoverSkillCommands(cwd?: string, environment: NodeJS.ProcessEnv = process.env): AvailableCommand[] {
+  const roots = resolveSkillRoots(cwd, environment);
   const commands = new Map<string, AvailableCommand>();
+  const seen = new Set<string>();
 
   for (const root of roots) {
     try {
-      const entries = readdirSync(root, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() || entry.isSymbolicLink()) {
-          const skillDir = path.join(root, entry.name);
-          const skillFile = path.join(skillDir, "SKILL.md");
-          if (existsSync(skillFile)) {
-            try {
-              const content = readFileSync(skillFile, "utf-8");
-              const { name, description, userInvocable } = parseFrontmatter(content);
-              if (userInvocable === false) {
-                continue;
-              }
-              const commandName = name && name.length > 0 ? name : entry.name;
-              if (!commands.has(commandName)) {
-                commands.set(commandName, {
-                  name: commandName,
-                  description:
-                    description && description.length > 0
-                      ? description
-                      : `Skill: ${commandName}`
-                });
-              }
-            } catch {
-              // Ignore file read errors
-            }
-          }
-        }
+      const directories = existsSync(path.join(root, "SKILL.md")) ? [root] : readdirSync(root, { withFileTypes: true })
+        .filter(entry => entry.isDirectory() || entry.isSymbolicLink()).map(entry => path.join(root, entry.name));
+      for (const directory of directories) {
+        try {
+          const skillFile = path.join(directory, "SKILL.md");
+          const info = statSync(skillFile);
+          if (!info.isFile() || info.size > 1024 * 1024) continue;
+          const { name, description, userInvocable } = parseFrontmatter(readFileSync(skillFile, "utf8"));
+          const commandName = name || path.basename(directory);
+          if (seen.has(commandName)) continue;
+          seen.add(commandName);
+          if (userInvocable === false) continue;
+          commands.set(commandName, { name: commandName, description: description || `Skill: ${commandName}` });
+        } catch { /* 不可读条目不发布。 */ }
       }
-    } catch {
-      // Ignore readdir errors
-    }
+    } catch { /* 忽略不可读目录。 */ }
   }
 
   return Array.from(commands.values());
@@ -219,7 +220,8 @@ export function discoverSkillCommands(cwd?: string): AvailableCommand[] {
 
 export function augmentAvailableCommands(
   existingCommands: AvailableCommand[] | undefined,
-  cwd?: string
+  cwd?: string,
+  environment: NodeJS.ProcessEnv = process.env
 ): AvailableCommand[] {
   const result = new Map<string, AvailableCommand>();
 
@@ -231,7 +233,7 @@ export function augmentAvailableCommands(
     }
   }
 
-  const skills = discoverSkillCommands(cwd);
+  const skills = discoverSkillCommands(cwd, environment);
   for (const skill of skills) {
     if (!result.has(skill.name)) {
       result.set(skill.name, skill);
@@ -240,4 +242,3 @@ export function augmentAvailableCommands(
 
   return Array.from(result.values());
 }
-

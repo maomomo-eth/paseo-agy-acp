@@ -1,8 +1,6 @@
-<div align="center">
-
 # paseo-agy-acp
 
-**与 Paseo 内置 Antigravity 共存，同时登录两个 Antigravity Pro 账号**
+与 Paseo 内置 Antigravity 共存，同时登录两个 Antigravity Pro 账号
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-2.6.1-blue?style=flat-square)](./package.json)
@@ -12,8 +10,6 @@
 
 [English](./README.md) | [中文](./README.zh-CN.md) | [Changelog](./CHANGELOG.md)
 
-</div>
-
 Paseo 从 v0.11.0 起内置了 Antigravity provider。`paseo-agy-acp` 作为独立
 provider 和它共存，Paseo 就可以同时登录两个 Antigravity Pro 账号，把日常工作
 分给不同的账号来调度。
@@ -21,12 +17,12 @@ provider 和它共存，Paseo 就可以同时登录两个 Antigravity Pro 账号
 **上游运行时：Registry `antigravity-acp` 1.4.3。** v2.6.1 修复托管 Linux
 x86_64 运行时向工作区写入内置技能文件的问题，同时保留内置和用户技能查询、读取能力。
 
-<img src="./docs/images/antigravity-and-antigravity-pro.png" alt="Paseo 中 Antigravity 与 Antigravity Pro 同时可用" width="640">
+![Paseo 中 Antigravity 与 Antigravity Pro 同时可用](./docs/images/antigravity-and-antigravity-pro.png)
 
 设置列表里看到的是显示名称。写 `config.json`、创建 agent 时填写 provider id。
 
 | | **Antigravity Pro**（本适配器） | **Antigravity**（Paseo 内置） |
-|---|---|---|
+| --- | --- | --- |
 | 显示名称 | Antigravity Pro | Antigravity |
 | provider id | `paseo-agy-acp` | `antigravity` |
 | 进程 | 官方 ACP 内核 `agy_acp_server` | 宿主机 `agy`（从 `PATH` 查找） |
@@ -50,10 +46,10 @@ x86_64 运行时向工作区写入内置技能文件的问题，同时保留内�
 ACP 提供协议，但一条可用于生产的 Paseo provider 仍需要协议之外的产品行为：
 
 | 需求 | 直接连接 Generic ACP | 使用 `paseo-agy-acp` |
-|---|---|---|
+| --- | --- | --- |
 | 官方执行链 | 可以启动 ACP server | OAuth、模型、工具、MCP 和推理继续留在 Google 官方内核 |
 | Paseo 上下文 | 没有产品级保证 | 将 Paseo daemon 与 workspace/agent context 注入官方 prompt |
-| Modes 与 MCP | 客户端和内核数据形态可能不同 | 映射 Paseo modes，并把 MCP `http` 声明改写为官方 `sse` 形态 |
+| Modes 与 MCP | 客户端和内核数据形态可能不同 | 映射 Paseo modes，保留原生 MCP `http` / `sse`，仅做必要的协议兼容 |
 | 多 agent 突发 | 多个 prompt 可能同时打入内核 | 使用跨 connector 共享的账户级持久 Admission 队列 |
 | Slash command discovery | 官方命令更新不包含本地 skills | 加入可由用户调用的 Gemini、Agents、Codex、配置和 workspace skills |
 | 空白回合 | 无输出的 `end_turn` 可能看起来成功 | 返回明确 JSON-RPC 错误，避免记录静默成功 |
@@ -98,7 +94,7 @@ Paseo / Generic ACP client
 ```
 
 | 层 | 职责 | 许可证边界 |
-|---|---|---|
+| --- | --- | --- |
 | Paseo | Agent 生命周期、workspace、委派和 provider 配置 | Paseo 项目 |
 | `paseo-agy-acp` | Paseo 专用 ACP 适配与 Admission | Apache-2.0；发布到 npm |
 | 官方 `agy_acp_server` | 认证、模型目录、工具、MCP 和推理 | Google 专有软件；只在本机安装 |
@@ -106,9 +102,10 @@ Paseo / Generic ACP client
 每个 connector 进程运行一个官方内核子进程。Admission 是可选项，但当一个
 Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 
-v2.6.1 在 Linux x86_64 上使用 Paseo v0.13.0 ACP 客户端与官方内核 1.4.3
-完成冒烟，覆盖新会话、模式、命令、文本/工具回合及技能读取后工作区保持为空。
-本补丁未重新验证 Paseo v0.12.0、完整 daemon/UI 流程或其他操作系统。
+本次适配器验证在 Linux x86_64 上使用隔离 fake kernel 和本地 MCP endpoint。
+本机安装的是 Paseo v0.12.0；本补丁未完成 Paseo v0.13.0、真实 daemon/UI、
+真实账号隔离或其他操作系统的验收，详见
+[验收范围](docs/operations/paseo-adapter-verification.md)。
 
 <!-- readme:requirements -->
 ## 环境要求
@@ -188,9 +185,9 @@ Paseo 会向 provider 进程提供 `PASEO_AGENT_ID` 和 `PASEO_AGENT_CWD`。只�
 `paseo-agy-acp`。旧键仍然存在时，Paseo 会隐藏内置 Antigravity provider，并把
 `antigravity` 这个 id 路由给本适配器。
 
-### 4. 重启并验证
+### 4. 重新加载并验证
 
-重启 Paseo daemon，创建 provider 为 `paseo-agy-acp` 的 agent，选择受支持模式
+运行 `paseo reload`，再创建 provider 为 `paseo-agy-acp` 的 agent，选择受支持模式
 并发送一个简单 prompt。`npx` 启动的是 Paseo 使用的 stdio ACP server，不是独立
 聊天程序。
 
@@ -200,7 +197,7 @@ Paseo 会向 provider 进程提供 `PASEO_AGENT_ID` 和 `PASEO_AGENT_CWD`。只�
 ### 必要环境变量
 
 | 变量 | 作用 |
-|---|---|
+| --- | --- |
 | `PASEO_AGY_ACP_OFFICIAL_BIN` | 官方 kernel wrapper 或 `.par` 的绝对路径 |
 | `PASEO_HOME` | 可选 Paseo home；默认 `~/.paseo` |
 | `AGY_ACP_ADMISSION_ENABLED` | `true` / `1` 启用 prompt fence |
@@ -212,7 +209,7 @@ Paseo 会向 provider 进程提供 `PASEO_AGENT_ID` 和 `PASEO_AGENT_CWD`。只�
 ### Mode 映射
 
 | Paseo 或旧 id | 官方在线 mode |
-|---|---|
+| --- | --- |
 | `default` | `default` |
 | `accept-edits` | `auto_edit` |
 | `dangerously-skip-permissions` | `yolo` |
@@ -230,17 +227,29 @@ Paseo 会向 provider 进程提供 `PASEO_AGENT_ID` 和 `PASEO_AGENT_CWD`。只�
 
 ### Skill roots
 
-Discovery 从 workspace `.agents/skills.json` 或 `skills.json`，以及全局
-`~/.gemini/config/skills.json` 读取配置目录。默认 roots 覆盖 workspace
-Agents/Codex 目录和全局 Gemini/Agents/Codex 目录。每个 skill 目录需要包含带
-可用 name 与 description frontmatter 的 `SKILL.md`。
+Discovery 合并配置目录和 workspace、全局 Gemini、Agents、Codex 及 Paseo
+兼容目录，并尊重 `GEMINI_HOME` 和 `PASEO_HOME`。Paseo 文档列出的安装位置包括
+`.agents/skills`、`.claude/skills` 和 `.codex/skills`；`.paseo/skills` 是额外兼容
+目录。每个 skill 需要带有可用 name 与 description 的 `SKILL.md` frontmatter。
+按会话隔离的 `paseo_skills` MCP server 提供 `list_skills` 与 `read_skill`，让内核
+实际读取已发现技能正文及相对资源文件，无需复制到工作区；读取范围限制在已发现
+技能目录内，每个文件最多 1 MiB。
+
+排队 notice、可选 stderr 诊断、原生 context 开关与真实 Paseo 待验收流程见
+[适配器验收](docs/operations/paseo-adapter-verification.md)。
 
 <!-- readme:operations -->
 ## 运维与故障排查
 
+运行 `paseo-agy-acp --doctor` 可只读检查本地内核执行文件与托管收据，输出 JSON；
+`ready` 为 false 时退出码为 1，认证和 daemon 状态保持 `not_checked`。启动 agent
+前，可显式运行 `paseo-agy-acp --prepare-kernel` 安装或校验托管内核。
+
 - 官方内核必须已在本机安装；`npx` 只安装代理。
 - npm 首次运行可能编译 `better-sqlite3`，需要本机 C++ 工具链。
-- 修改 provider command、环境变量或内核路径后要重启 Paseo。
+- 修改 provider command、环境变量或内核路径后运行 `paseo reload`，配置对后续启动
+  生效；已经运行的 agent 进程保留原配置。见
+  [Paseo 自定义 provider 文档](https://paseo.sh/docs/custom-providers)。
 - 已启用 Admission 但 identity 缺失、状态权限不安全或 policy 非法时，系统拒绝启动，
   不会静默变成 unfenced 运行。
 - assistant 文本已经可见但 turn 仍 `running`，通常是未处理的权限卡片，而不是内核
@@ -248,7 +257,8 @@ Agents/Codex 目录和全局 Gemini/Agents/Codex 目录。每个 skill 目录需
   是墙钟时间，权限等待也会计入。
 - 工具质量、生图、backend 配额与 provider 错误文案仍由官方内核和 Google backend
   负责。
-- 可复现升级或回滚应在 provider command 中固定三段 npm 版本，然后重启 Paseo。
+- 可复现升级或回滚应在 provider command 中固定三段 npm 版本，然后运行
+  `paseo reload` 并启动新 agent。
 
 当前运维入口：
 

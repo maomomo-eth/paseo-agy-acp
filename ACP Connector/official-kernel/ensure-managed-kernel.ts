@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   chmodSync,
   existsSync,
@@ -105,26 +107,65 @@ export function usesManagedOfficialKernel(configured: string | undefined, home =
 
 export async function ensureManagedOfficialKernel(environment: NodeJS.ProcessEnv = process.env): Promise<string> {
   const configured = environment.PASEO_AGY_ACP_OFFICIAL_BIN?.trim();
-  if (!usesManagedOfficialKernel(configured)) return configured ?? "";
-  const download = officialKernelDownload();
   const home = environment.HOME?.trim() || homedir();
+  if (!usesManagedOfficialKernel(configured, home)) return configured ?? "";
+  const download = officialKernelDownload();
   const officialRoot = managedOfficialKernelRoot(home);
-  if (download.compat) {
-    const wrapper = managedStableWrapper(home);
-    if (await currentManagedWrapper(home)) return wrapper;
-    await ensureOfficialPayload(officialRoot, download);
-    const lifecycle = new OfficialKernelCompatLifecycle({ stateRoot: managedCompatRoot(home) });
-    const prepared = await lifecycle.prepare({
-      parPath: path.join(officialRoot, download.binaryName),
-      externalHarnessPath: path.join(officialRoot, "localharness_external"),
-      compatModulePath: compatModulePath(),
-      patchPlan: RC01_KERNEL_COMPAT_PATCH_PLAN
-    });
-    await lifecycle.activate(prepared.artifactId);
-    process.stderr.write(`paseo-agy-acp is using the managed 1.4.3 kernel at ${wrapper}\n`);
-    return wrapper;
+  return withManagedKernelInstallLock(`${officialRoot}.install-lock`, async () => {
+    if (download.compat) {
+      const wrapper = managedStableWrapper(home);
+      if (await currentManagedWrapper(home)) return wrapper;
+      await ensureOfficialPayload(officialRoot, download);
+      const lifecycle = new OfficialKernelCompatLifecycle({ stateRoot: managedCompatRoot(home) });
+      const prepared = await lifecycle.prepare({
+        parPath: path.join(officialRoot, download.binaryName),
+        externalHarnessPath: path.join(officialRoot, "localharness_external"),
+        compatModulePath: compatModulePath(),
+        patchPlan: RC01_KERNEL_COMPAT_PATCH_PLAN
+      });
+      await lifecycle.activate(prepared.artifactId);
+      process.stderr.write(`paseo-agy-acp is using the managed 1.4.3 kernel at ${wrapper}\n`);
+      return wrapper;
+    }
+    return ensureStockOfficialBinary(officialRoot, download);
+  });
+}
+
+/** 跨进程互斥覆盖下载、prepare 和 activate；只回收确认已退出的本机进程锁。 */
+export async function withManagedKernelInstallLock<T>(lockPath: string, action: () => Promise<T>, timeoutMs = 180_000): Promise<T> {
+  await mkdir(path.dirname(lockPath), { recursive: true, mode: 0o755 });
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    try {
+      await mkdir(lockPath, { mode: 0o700 });
+      try { await writeFile(path.join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid }), "utf8"); }
+      catch (error) { await rm(lockPath, { recursive: true, force: true }); throw error; }
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      // 回收者自身互斥并重读 owner，避免旧等待者误删随后新建的锁。
+      const reaper = `${lockPath}.reaper`;
+      let reaping = false;
+      try {
+        await mkdir(reaper, { mode: 0o700 });
+        reaping = true;
+        const owner = JSON.parse(await readFile(path.join(lockPath, "owner.json"), "utf8")) as { pid?: unknown };
+        if (typeof owner.pid === "number" && Number.isSafeInteger(owner.pid) && owner.pid > 0) {
+          try { process.kill(owner.pid, 0); }
+          catch (probe) {
+            if ((probe as NodeJS.ErrnoException).code === "ESRCH") {
+              await rm(lockPath, { recursive: true, force: true });
+            }
+          }
+        }
+      } catch { /* owner 正在写入、其他回收者工作或损坏时不擅自抢占。 */ }
+      finally { if (reaping) await rm(reaper, { recursive: true, force: true }); }
+      if (Date.now() >= deadline) throw new Error("等待官方内核安装锁超时；请检查是否仍有安装进程运行");
+      await delay(Math.min(100, Math.max(1, deadline - Date.now())));
+    }
   }
-  return ensureStockOfficialBinary(officialRoot, download);
+  try { return await action(); }
+  finally { await rm(lockPath, { recursive: true, force: true }); }
 }
 
 async function currentManagedWrapper(home: string): Promise<boolean> {
@@ -158,30 +199,47 @@ async function ensureOfficialPayload(root: string, download: OfficialKernelDownl
   } else if (!download.compat && existsSync(binaryPath)) {
     return;
   }
-  const zipPath = path.join(root, "agy-acp-server.zip.partial");
-  process.stderr.write(`Downloading the official Antigravity ACP kernel 1.4.3 for ${download.id}\n${download.url}\n`);
-  await downloadFile(download.url, zipPath);
-  if ((await sha256File(zipPath)) !== download.sha256) {
-    throw new Error(`official kernel archive checksum mismatch for ${download.id}`);
-  }
-  const finalZip = path.join(root, "agy-acp-server.zip");
-  renameSync(zipPath, finalZip);
-  extractZip(finalZip, root);
-  if (process.platform !== "win32") {
-    chmodSync(binaryPath, 0o755);
-    if (existsSync(harnessPath)) chmodSync(harnessPath, 0o755);
-  }
-  if (download.compat) {
-    const wrapper = path.join(root, "agy-acp-server-canary");
-    await writeFileText(wrapper, "#!/bin/bash\nset -euo pipefail\ncd \"$(dirname \"$(readlink -f \"$0\")\")\"\nexec ./agy_acp_server.par --uid= \"$@\"\n");
-    chmodSync(wrapper, 0o755);
-  }
+  const stage = await mkdtemp(`${root}.install-`);
+  const zipPath = path.join(stage, "agy-acp-server.zip.partial");
+  try {
+    process.stderr.write(`Downloading the official Antigravity ACP kernel 1.4.3 for ${download.id}\n${download.url}\n`);
+    await downloadFile(download.url, zipPath);
+    if ((await sha256File(zipPath)) !== download.sha256) {
+      throw new Error(`official kernel archive checksum mismatch for ${download.id}`);
+    }
+    const finalZip = path.join(stage, "agy-acp-server.zip");
+    renameSync(zipPath, finalZip);
+    extractZip(finalZip, stage);
+    const stagedBinary = path.join(stage, download.binaryName);
+    const stagedHarness = path.join(stage, "localharness_external");
+    if (!existsSync(stagedBinary)) throw new Error("official kernel archive is missing the executable");
+    if (download.compat && (
+      await sha256File(stagedBinary) !== PRODUCTION_KERNEL_COMPAT_PINS.parSha256 ||
+      await sha256File(stagedHarness) !== PRODUCTION_KERNEL_COMPAT_PINS.externalHarnessSha256
+    )) throw new Error("official kernel extracted payload checksum mismatch");
+    if (process.platform !== "win32") {
+      chmodSync(stagedBinary, 0o755);
+      if (existsSync(stagedHarness)) chmodSync(stagedHarness, 0o755);
+    }
+    if (download.compat) {
+      const wrapper = path.join(stage, "agy-acp-server-canary");
+      await writeFileText(wrapper, "#!/bin/bash\nset -euo pipefail\ncd \"$(dirname \"$(readlink -f \"$0\")\")\"\nexec ./agy_acp_server.par --uid= \"$@\"\n");
+      chmodSync(wrapper, 0o755);
+    }
+    // 提交失败时回滚旧目录；成功后仅清理空旧目录，保留既有数据供人工检查。
+    const previous = `${stage}.previous`;
+    await rename(root, previous);
+    try { await rename(stage, root); }
+    catch (error) { await rename(previous, root); throw error; }
+    try { await rmdir(previous); }
+    catch { process.stderr.write(`Previous managed kernel files retained at ${previous}\n`); }
+  } finally { await rm(stage, { recursive: true, force: true }); }
 }
 
 function extractZip(zipPath: string, root: string): void {
   const extracted = process.platform === "win32"
-    ? spawnSync("powershell.exe", ["-NoProfile", "-Command", `Expand-Archive -Force -LiteralPath '${zipPath}' -DestinationPath '${root}'`], { stdio: "inherit" })
-    : spawnSync("python3", ["-c", "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", zipPath, root], { stdio: "inherit" });
+    ? spawnSync("powershell.exe", ["-NoProfile", "-Command", `Expand-Archive -Force -LiteralPath '${zipPath}' -DestinationPath '${root}'`], { stdio: "inherit", timeout: 60_000 })
+    : spawnSync("python3", ["-c", "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", zipPath, root], { stdio: "inherit", timeout: 60_000 });
   if (extracted.status !== 0) throw new Error("official kernel archive could not be extracted");
 }
 
@@ -196,7 +254,7 @@ function compatModulePath(): string {
 }
 
 async function downloadFile(url: string, destination: string): Promise<void> {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
   if (!response.ok || response.body === null) throw new Error(`official kernel download failed with HTTP ${response.status}`);
   const { open } = await import("node:fs/promises");
   const handle = await open(destination, "w", 0o644);
@@ -205,7 +263,7 @@ async function downloadFile(url: string, destination: string): Promise<void> {
     while (true) {
       const { done, value } = await reader.read();
       if (done) return;
-      if (value !== undefined) await handle.write(value);
+      if (value !== undefined) await handle.writeFile(value);
     }
   } finally {
     await handle.close();
