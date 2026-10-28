@@ -10,17 +10,17 @@ All notable changes to `paseo-agy-acp` are recorded here.
   先读后写时立即报 `database is locked`。沿用 5 秒等待上限、全局容量限制与结算语义，
   不增加 prompt 重放。
 - 官方内核冒烟握手使用 Paseo 的 `clientCapabilities`，同步包版本、安装示例和版本断言。
-- 文档及历史验收记录中的个人主目录、内网镜像地址已脱敏；历史 Git 提交未重写。
 
 ### 2.7.1 验证与运维
 
 - CI 固定安装 `@getpaseo/server@0.13.2`，使用真实 ACP 客户端覆盖新建、模型切换、
   许可拒绝、取消、关闭、冷启动加载与恢复，以及 MCP 目录、参数、请求头、查询参数和协议降级。
+  独立 CI job 使用提交的专用 lockfile、npm 官方 registry、SHA-512 integrity 与禁用安装脚本的 npm ci。
 - 新增独立进程持锁的入队、激活和结算回归测试。完整验证为 58 个测试文件、361 项通过、
   1 项平台跳过；真实客户端契约 4/4 通过，架构及秘密扫描通过。
-- 补充普通用户部署、代理、无桌面登录与跨主机验收指南。修补版源码通过 Gemini 和
-  Claude Sonnet 4.6 真实跨 VM 委派及后续消息，并通过 Gemini 取消、注册禁用、隧道断开
-  与重连续跑；远端文件和隐藏随机标记独立核对通过，本轮零锁错误、零任务重试。
+- 补充普通用户部署、代理、无桌面登录与跨主机操作指南。作者报告修补源码完成了
+  Gemini / Claude Sonnet 4.6 跨 VM 委派及 Gemini 取消和重连；这属于作者本地验收，
+  未纳入 CI，原始环境证据未公开供维护者独立复核，不作为产品保证。
 - 官方运行时仍为 Registry `antigravity-acp` 1.4.3，内核补丁、哈希及收据保持不变。
   未重新验收完整 UI、双账号隔离、Paseo 0.12.0、其他系统或长时间并发压测。
 
@@ -141,7 +141,7 @@ All notable changes to `paseo-agy-acp` are recorded here.
 - Use the Paseo provider id `paseo-agy-acp` with display name **Antigravity
   Pro** instead of `antigravity`. Paseo v0.11.2 added its own built-in agy
   provider (id `antigravity`, display name Antigravity) that starts the host
-  `agy` CLI (`~/.local/bin/agy`); its login lives in
+  `agy` CLI (`/home/tiezbro/.local/bin/agy`); its login lives in
   `~/.gemini/antigravity-cli`. This adapter does not start that `agy` CLI; it
   starts `agy-acp`, which runs the official ACP kernel `agy_acp_server`, and
   its login lives in `~/.gemini/antigravity-acp`.
@@ -391,10 +391,10 @@ All notable changes to `paseo-agy-acp` are recorded here.
 ### Unchanged
 
 - Production Paseo daemon `127.0.0.1:6767` was **not restarted**. After the
-  8/8 Admission raise, `~/.local/bin/agy-acp` was retargeted to
-  `~/.local/opt/paseo-agy-acp-2.1.0.0-20260823T112457Z/bin/agy-acp-production`
+  8/8 Admission raise, `/home/tiezbro/.local/bin/agy-acp` was retargeted to
+  `/home/tiezbro/.local/opt/paseo-agy-acp-2.1.0.0-20260823T112457Z/bin/agy-acp-production`
   with a fresh ledger at
-  `~/.local/state/paseo-agy-acp/production-official-8` so the
+  `/home/tiezbro/.local/state/paseo-agy-acp/production-official-8` so the
   durable 3+1 fingerprint cannot fail-close the new policy. The default Paseo
   `antigravity` provider still runs that symlink. `antigravity-official-canary`
   is disabled so production is not split. Idle Antigravity agents pick up 8/8

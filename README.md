@@ -16,7 +16,7 @@ Antigravity Pro accounts and dispatch everyday work to different accounts.
 
 **Upstream runtime: Registry `antigravity-acp` 1.4.3.** Version 2.7.1 fixes
 Admission transaction contention and adds real Paseo 0.13.2 client contracts
-and cross-host verification, retaining protocol lifecycle hardening, read-only
+and author-local cross-host verification notes, retaining protocol lifecycle hardening, read-only
 skill resources, model tracking, diagnostics and the workspace-integrity fix.
 
 ![Antigravity and Antigravity Pro both available in Paseo](./docs/images/antigravity-and-antigravity-pro.png)
@@ -116,16 +116,16 @@ The adapter runs one official kernel child per connector process. Admission is
 optional but recommended whenever one Antigravity account serves concurrent
 Paseo agents.
 
-Version 2.7.0 was smoke-tested on Linux x86_64 with Paseo v0.13.2 and official
-Antigravity ACP 1.4.3. A subsequent source build also completed real cross-VM
-delegation and follow-up messages using Gemini and Claude through the official
-kernel, plus cancellation and host reconnection using Gemini. Intermittent `database is locked`
-errors recovered after retry. Admission transaction contention has since been fixed
-in source. The patched build passed concurrency regression tests and the full
-cross-VM flow, including cancellation, disabled-host and broken-tunnel errors,
-and continued execution by the same remote agent after reconnection, with no
-lock errors or task retries in that run. UI, account isolation,
-Paseo 0.12.0 and other operating systems were not retested. See the
+CI verifies the adapter with the real Paseo 0.13.2 ACP client, an isolated
+kernel, and a local HTTP MCP server. It does not run a Google account, a real
+Paseo daemon, or a cross-host deployment.
+
+The author reports local cross-VM Gemini/Claude delegation and follow-up turns,
+plus Gemini cancellation and host reconnection, using the Admission patch
+source. Those runs are **author-local acceptance, outside CI**. Raw environment
+evidence is not public and has not been independently reproduced by the
+maintainer; these observations are not a product guarantee. UI, account
+isolation, Paseo 0.12.0 and other operating systems were not retested. See the
 [verification scope](docs/operations/paseo-adapter-verification.md) and
 [cross-host runbook](docs/operations/paseo-cross-host-e2e.md).
 

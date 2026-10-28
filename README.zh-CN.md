@@ -15,7 +15,7 @@ provider 和它共存，Paseo 就可以同时登录两个 Antigravity Pro 账号
 分给不同的账号来调度。
 
 **上游运行时：Registry `antigravity-acp` 1.4.3。** v2.7.1 修复 Admission 事务争锁，
-补充真实 Paseo 0.13.2 客户端契约与跨主机验收，保留协议生命周期加固、只读技能资源、
+补充真实 Paseo 0.13.2 客户端契约与作者本地跨主机验收记录，保留协议生命周期加固、只读技能资源、
 模型跟踪、诊断能力和工作区完整性修复。
 
 ![Paseo 中 Antigravity 与 Antigravity Pro 同时可用](./docs/images/antigravity-and-antigravity-pro.png)
@@ -103,13 +103,13 @@ Paseo / Generic ACP client
 每个 connector 进程运行一个官方内核子进程。Admission 是可选项，但当一个
 Antigravity 账号服务多个并发 Paseo agent 时建议启用。
 
-v2.7.0 在 Linux x86_64 上使用 Paseo v0.13.2 与官方内核 1.4.3 完成冒烟；
-后续源码构建还通过官方内核的 Gemini 和 Claude 完成了真实跨 VM 委派与后续消息，
-并用 Gemini 验证了取消与主机重连。期间出现的间歇性 `database is locked` 经重试恢复；
-后续源码修补版已通过并发回归及完整跨 VM 复测，覆盖取消、注册禁用、隧道断开与重连后原代理继续执行；
-该轮复测没有锁错误或任务重试。
-UI、账号隔离、Paseo 0.12.0 和其他操作系统未重新验收。详见
-[验收范围](docs/operations/paseo-adapter-verification.md)与
+CI 使用真实 Paseo 0.13.2 ACP 客户端、隔离内核和本地 HTTP MCP 服务验证适配器，
+不运行 Google 账号、真实 Paseo daemon 或跨主机部署。
+
+作者报告曾用事务修补源码完成 Gemini / Claude 跨 VM 委派与后续消息，以及 Gemini
+取消和主机重连。这些属于**作者本地验收，未纳入 CI**；原始环境证据未公开，维护者尚未
+独立复现，不能视为产品保证。UI、账号隔离、Paseo 0.12.0 和其他操作系统未重新验收。
+详见[验收范围](docs/operations/paseo-adapter-verification.md)与
 [跨主机指南](docs/operations/paseo-cross-host-e2e.md)。
 
 <!-- readme:requirements -->

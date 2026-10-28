@@ -7,9 +7,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 
-// 此套件由 CI 单独安装固定版本后必跑；依赖缺失或版本不符必须失败，不能静默跳过。
+// 此套件由 CI 在独立 job 中按提交的 lockfile 安装后必跑；依赖缺失或版本不符必须失败，不能静默跳过。
 const root = fileURLToPath(new URL("../", import.meta.url));
-const clientRoot = path.resolve(process.env.PASEO_COMPAT_CLIENT_ROOT ?? path.join(root, ".tmp-paseo-client"));
+const clientRoot = path.resolve(process.env.PASEO_COMPAT_CLIENT_ROOT ?? path.join(root, "tests/fixtures/paseo-client"));
 const require = createRequire(path.join(clientRoot, "package.json"));
 const serverEntry = require.resolve("@getpaseo/server");
 const serverRoot = path.resolve(path.dirname(serverEntry), "../../..");
