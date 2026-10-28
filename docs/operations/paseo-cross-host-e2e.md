@@ -1,7 +1,8 @@
 # Paseo 跨主机部署与端到端验收
 
 本文面向 Linux VM，说明普通用户部署、代理、无桌面登录和真实远端委派的验收方法。
-命令以 Paseo `0.13.2`、适配器 `2.7.0`、官方内核 `1.4.3` 为基线。
+命令以 Paseo `0.13.2`、适配器 `2.7.1`、官方内核 `1.4.3` 为基线。
+`2.7.1` 为本次待发布补丁；发布前请按下一节使用源码构建。第 6 节保留实际验收时的版本与源码标识。
 文中的 `VM_HOST`、`SSH_USER`、`PROXY_HOST`、`PROXY_PORT` 及大写 ID 均需替换为自己的值。
 
 ## 1. 准备两端运行环境
@@ -38,8 +39,8 @@ export NO_PROXY="localhost,127.0.0.1,::1"
 export no_proxy="$NO_PROXY"
 
 curl --proxy "$HTTPS_PROXY" --head --fail --max-time 20 https://registry.npmjs.org/
-npx -y paseo-agy-acp@2.7.0 --prepare-kernel
-npx -y paseo-agy-acp@2.7.0 --login
+npx -y paseo-agy-acp@2.7.1 --prepare-kernel
+npx -y paseo-agy-acp@2.7.1 --login
 ```
 
 不需要代理时，直接运行末尾两条安装和登录命令。首次内核下载约 320 MiB；下载超时的
