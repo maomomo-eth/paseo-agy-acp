@@ -79,7 +79,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Node 22 随附的 node-gyp 尚不能识别 windows-latest 上的 VS 2026。
+        os: [ubuntu-latest, macos-latest, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:

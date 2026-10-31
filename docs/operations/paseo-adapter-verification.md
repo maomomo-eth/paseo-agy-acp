@@ -33,6 +33,8 @@ Admission 的 `agentId` 为必填。启用 Admission 但缺失、空或纯空白
 
 CI 的 `Provider without Admission` 在 Ubuntu、macOS 和 Windows 原生 runner 上运行 `paseo-provider-platform.test.mjs`，不通过伪造 `process.platform` 代替实际平台。它也在每个平台验证 Admission 开启但无身份时的 discovery、告警、prompt 拒绝与零数据库创建。普通 provider 模式不依赖 Linux 进程证据；Admission 的真实租约／进程回收契约仍仅在 Linux 验证。
 
+Windows CI 固定使用 `windows-2022` 的 VS 2022 工具链，保留完整 `npm ci` 和原生依赖构建。当前 Node.js 22 随附的 node-gyp 无法识别 `windows-latest` 的 VS 2026，首次该项在依赖安装阶段失败；没有通过禁用安装脚本或跳过测试将它视为通过。各镜像工具链可查 [GitHub 官方清单](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md)。
+
 可在任一平台的项目根目录用 Node.js 22 或更新版本复现，不需要设置 shell 专属环境变量：
 
 ```bash
