@@ -10,7 +10,7 @@ import { clientFixtures } from "../scripts/paseo-client-versions.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixture = clientFixtures.find(entry => entry.version === "0.14.0");
-const require = createRequire(path.join(process.env.PASEO_COMPAT_CLIENT_ROOT ?? fixture.root, "package.json"));
+const require = createRequire(path.resolve(process.env.PASEO_COMPAT_CLIENT_ROOT ?? fixture.root, "package.json"));
 const entry = require.resolve("@getpaseo/server");
 const serverRoot = path.resolve(path.dirname(entry), "../../..");
 assert.equal(JSON.parse(await readFile(path.join(serverRoot, "package.json"), "utf8")).version, "0.14.0");
