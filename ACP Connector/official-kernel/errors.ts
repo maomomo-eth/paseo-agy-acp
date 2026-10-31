@@ -10,14 +10,18 @@ export function sessionUpdateShowsVisibleOutput(params: unknown): boolean {
     (typeof update.session_update === "string" && update.session_update) ||
     (typeof update.type === "string" && update.type) ||
     "";
-  if (kind === "tool_call" || kind === "tool_call_update") return true;
-  // 文本事件本身不代表有正文；图片等合法非文本输出仍算可见内容。
-  if (isRecord(update.content) && typeof update.content.type === "string" &&
-      ["image", "audio", "resource", "resource_link"].includes(update.content.type)) return true;
-  if (isRecord(update.content) && typeof update.content.text === "string" && update.content.text.trim()) {
-    return true;
-  }
-  return false;
+  if (["tool_call", "tool_call_update", "tool", "tool_update"].includes(kind)) return true;
+  // 同时兼容单块和块数组；未知扩展块保留透传语义，不因本地类型表落后而报空轮次。
+  const blocks = Array.isArray(update.content) ? update.content : [update.content];
+  return blocks.some(block => {
+    if (!isRecord(block)) return false;
+    if (block.type === "text" || block.type === undefined) {
+      return typeof block.text === "string" && block.text.trim().length > 0;
+    }
+    if (typeof block.type !== "string" || !block.type.trim()) return false;
+    // 非文本块必须携带负载；仅有 type 或 _meta 不算输出。
+    return Object.keys(block).some(key => key !== "type" && key !== "_meta");
+  });
 }
 
 export function isSuccessfulEndTurn(result: unknown): boolean {

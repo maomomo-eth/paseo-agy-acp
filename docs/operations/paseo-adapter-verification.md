@@ -13,6 +13,7 @@ Admission 事务争锁修补完成完整跨主机复测。
 | 层次 | 使用的组件 | 已验证范围 | 范围限制 |
 | --- | --- | --- | --- |
 | 隔离自动测试 | 适配器、隔离内核、本地 MCP 服务 | 协议、技能资源、排队、取消与关闭 | 不使用 Google 账号或真实 daemon |
+| 跨平台 provider 契约 | Linux、macOS、Windows 原生 CI runner，适配器与隔离内核 | Admission 关闭时握手、会话、模型、输出、取消、MCP 与关闭；无身份探测告警且禁止业务 prompt | 不验证各系统官方内核、安装器或真实账号；不验证非 Linux Admission |
 | 真实客户端契约 | 分别固定 0.13.2 与 0.14.0 的 `ACPAgentClient`、隔离内核 | 新建、模型切换、许可、加载、恢复、MCP 透传 | 本地服务模拟远端工具 |
 | 0.14 daemon 核心契约 | 真实 AgentManager、存储、空闲回收器和适配器，隔离内核 | 回收后的 load/resume、context、动态 MCP、模型与 thinking、排队取消及席位释放 | 注入时钟跨过一小时阈值；不连接 Google 账号，不运行完整网络 daemon |
 | 作者本地跨主机（未纳入 CI） | 两个 Linux VM、两个 Paseo daemon、官方内核及已登录账号 | Gemini / Claude 委派与两轮回传；Gemini 取消、禁用连接错误及重连后继续 | 作者报告修补版本轮零锁错误、零任务重试；未公开原始环境证据 |
@@ -22,7 +23,24 @@ Admission 事务争锁修补完成完整跨主机复测。
 
 ## 隔离自动验收
 
-0.14 维护改动修复了空字符串或空白文本分块绕过空轮次检查的问题，保留合法非文本输出和工具事件；成功关闭 ACP 会话时撤销技能 MCP token 并清理对应会话绑定。回归覆盖关闭失败、重复关闭和多会话隔离。Admission 的 `agentId` 类型同步为必填，与运行时校验一致，生产 discovery 仍跳过无 ID 的探测。
+0.14 维护改动修复了空字符串或空白文本分块绕过空轮次检查的问题，保留合法非文本输出和工具事件；成功关闭 ACP 会话时撤销技能 MCP token 并清理对应会话绑定。关闭请求绑定发出时的 token，旧关闭响应不能撤销同 ID 重新加载或恢复的会话。回归覆盖缺失 session ID、关闭失败保留模型／cwd／原生 context／技能能力、并发乱序成功／失败、重复关闭和多会话隔离。
+
+`official-output-shapes` 与代理终态测试覆盖单块、内容数组、纯空白／空数组、缺失 content、工具事件及兼容别名、image、audio、resource、resource_link。未知非文本扩展块只要包含类型及非元数据负载字段，就保留透传并计为输出；只有类型或元数据的空壳不算输出。这是对未知扩展的兼容策略，不是对其 schema 有效性或客户端可渲染性的保证。
+
+### Admission 身份与跨平台边界
+
+Admission 的 `agentId` 为必填。启用 Admission 但缺失、空或纯空白 `PASEO_AGENT_ID` 时，无法仅凭环境判断调用方一定在探测，因此 stderr 会明确告警，代理只允许握手和能力／会话配置探测，业务 `session/prompt` 在进入内核前被拒绝；不会静默退回无租约执行。Paseo 创建正式 agent 时必须注入身份。需要普通无队列模式时，显式设置 `AGY_ACP_ADMISSION_ENABLED=false`。
+
+CI 的 `Provider without Admission` 在 Ubuntu、macOS 和 Windows 原生 runner 上运行 `paseo-provider-platform.test.mjs`，不通过伪造 `process.platform` 代替实际平台。它也在每个平台验证 Admission 开启但无身份时的 discovery、告警、prompt 拒绝与零数据库创建。普通 provider 模式不依赖 Linux 进程证据；Admission 的真实租约／进程回收契约仍仅在 Linux 验证。
+
+可在任一平台的项目根目录用 Node.js 22 或更新版本复现，不需要设置 shell 专属环境变量：
+
+```bash
+npm ci
+npm run test:paseo-provider
+```
+
+这些用例启动适配器与隔离 Node.js 内核，不使用官方二进制或业务账号。完整 Google 内核在 macOS／Windows 的安装和真实运行仍需各平台专项验收。
 
 在项目根目录运行：
 
@@ -69,9 +87,13 @@ npm run test:paseo-client
 PASEO_LIVE_CLI_ROOT=/path/to/node_modules/@getpaseo/cli node scripts/verify-paseo-014-live.mjs
 ```
 
-脚本要求已安装的 Paseo server 为 0.14.0，并从默认 `~/.paseo/config.json` 读取 `paseo-agy-acp` 的内核和代理环境配置；其他源目录使用 `PASEO_LIVE_SOURCE_HOME`。两轮真实请求检查同会话历史、daemon context、模型、thinking，以及回收前后成功的 `list_hosts` 工具调用。回收使用注入时钟，不等同于一小时墙钟或 UI 验收；该脚本不在无业务凭据的 CI 中运行。
+脚本要求已安装的 Paseo server 为 0.14.0，并从默认 `~/.paseo/config.json` 读取 `paseo-agy-acp` 的内核和代理环境配置；其他源目录使用 `PASEO_LIVE_SOURCE_HOME`。只选取 `PASEO_AGY_ACP_OFFICIAL_BIN` 及大小写 HTTP／HTTPS／ALL／NO proxy 变量，排除任意其他 provider 字段和 API／OAuth 环境变量；现有登录态由内核读取原有账号目录。选取的真实值只用于内存配置，磁盘临时 `config.json` 的所有环境变量值均写为 `[REDACTED]`，并在最外层 `finally` 删除，覆盖创建、启动、验收和停止失败。结果不记录第三方异常原文，daemon 日志关闭，避免异常携带代理认证信息。
 
-2026-10-31 当前工作区本机验证：完整产品测试 387 项通过、1 项按原有条件跳过；0.13.2 客户端 4 项、0.14.0 客户端及 daemon 核心 7 项全部通过。独立 Paseo 0.14.0 daemon 与官方 Gemini 内核的两轮验收通过，保留同一 session、历史校验码、context、`gemini-3.8-flash-high` 和 high thinking，回收前后均有成功的 `list_hosts` 调用记录。停止后独立检查确认监听端口已关闭、租约数为零、两轮数据库状态均为 completed。本地证据目录为 `.tmp-paseo-014-live/b8a3923c-8612-4104-babe-7eb54533df18/`，未公开其私有配置；这些结果针对未提交的当前源码，不构成已发布包或完整 UI 验收保证。
+`paseo-live-config.test.mjs` 在不使用业务凭据的 CI 中验证变量白名单、写盘脱敏、内存值保留、文件权限及成功／异常后的删除。两轮真实请求另外检查同会话历史、daemon context、模型、thinking，以及回收前后成功的 `list_hosts` 工具调用。回收使用注入时钟，不等同于一小时墙钟或 UI 验收；真实账号脚本本身不在 CI 中运行。
+
+2026-10-31 首轮作者本机验证记录：当时完整产品测试 387 项通过、1 项按原有条件跳过；0.13.2 客户端 4 项、0.14.0 客户端及 daemon 核心 7 项全部通过。独立 Paseo 0.14.0 daemon 与官方 Gemini 内核的两轮验收通过，保留同一 session、历史校验码、context、`gemini-3.8-flash-high` 和 high thinking，回收前后均有成功的 `list_hosts` 调用记录。停止后独立检查确认监听端口已关闭、租约数为零、两轮数据库状态均为 completed。本地证据目录为 `.tmp-paseo-014-live/b8a3923c-8612-4104-babe-7eb54533df18/`；这些本地结果不能视为维护者独立复现、已发布包或完整 UI 验收保证。评审后的新增测试及各平台结果以 PR 的 CI 为准。
+
+同日评审补验：本地完整产品测试 430 项通过、1 项原有条件跳过，另有 4 项无凭据配置脱敏／清理测试通过；双版本客户端及 daemon 契约仍为 11 项通过。修订后的真实验收脚本两轮通过，证据位于 `.tmp-paseo-014-live/7a193007-b762-46ef-81f1-225168420fd4/`，独立检查确认临时配置不存在、监听关闭、租约和活动轮次为零。这仍属于作者本地证据；公开可复现的内容与身份边界、关闭竞态及无账号跨平台契约由 CI 提供。
 
 ## 排队反馈与诊断
 

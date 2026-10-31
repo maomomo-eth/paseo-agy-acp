@@ -74,6 +74,29 @@ jobs:
       - name: Test real Paseo ACP client compatibility
         run: npm run test:paseo-client
 
+  provider-platform:
+    name: Provider without Admission (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install adapter dependencies
+        run: npm ci
+      - name: Test ordinary provider and discovery without identity
+        run: npm run test:paseo-provider
+
   repository-redaction:
     name: Read-only redaction mappings and secrets
     runs-on: ubuntu-latest

@@ -6,11 +6,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { liveProviderEnvironment, withRedactedLiveConfig } from "./paseo-live-config.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const cliRoot = process.env.PASEO_LIVE_CLI_ROOT;
 assert.ok(cliRoot, "请显式设置 PASEO_LIVE_CLI_ROOT 为已安装的 @getpaseo/cli 目录");
-const require = createRequire(path.join(cliRoot, "package.json"));
+const require = createRequire(path.resolve(cliRoot, "package.json"));
 const entry = require.resolve("@getpaseo/server");
 assert.equal(JSON.parse(await readFile(path.resolve(path.dirname(entry), "../../../package.json"), "utf8")).version, "0.14.0");
 const load = relative => import(pathToFileURL(path.join(path.dirname(entry), relative)).href);
@@ -31,68 +32,90 @@ const persisted = { version: 1, pluginsEnabled: false,
     appendSystemPrompt: `这是隔离验收。每次回复必须包含 ${contextMarker}。只执行用户指定的只读工具。` },
   agents: { idleRuntimeCleanup: false, providers: {
     ...Object.fromEntries(["claude", "codex", "copilot", "opencode", "pi", "omp", "antigravity", "muse"].map(id => [id, { enabled: false }])),
-    [provider]: { ...original, command: [process.execPath, path.join(root, "dist/ACP Connector/main.js")], env: {
-      ...original.env, PASEO_HOME: home, AGY_ACP_ADMISSION_ENABLED: "true", AGY_ACP_STATE_DIR: path.join(home, "admission")
+    [provider]: { enabled: true, extends: "acp", label: "Isolated ACP verification", command: [process.execPath, path.join(root, "dist/ACP Connector/main.js")], env: {
+      ...liveProviderEnvironment(original.env), PASEO_HOME: home, AGY_ACP_ADMISSION_ENABLED: "true", AGY_ACP_STATE_DIR: path.join(home, "admission")
     } }
   } }, features: { voiceMode: { enabled: false } } };
-// 仅保留本次验收的私有配置；日志与结果不输出源 provider 的环境变量。
-await writeFile(path.join(home, "config.json"), JSON.stringify(persisted, null, 2), { encoding: "utf8", mode: 0o600 });
-const config = resolveConfigFromPersisted(home, persisted, { env: {}, relayEnabledFallback: false });
-for (const setting of Object.values(config.speech.providers)) setting.enabled = false;
-const logger = require("pino")({ level: "warn" }, path.join(home, "daemon.log"));
-const daemon = await createPaseoDaemon(config, logger);
-let cleanup;
-const summary = { passed: false, paseo: "0.14.0", isolatedHome: home, clock: "injected into real idle collector", checks: {} };
-try {
-  await daemon.start();
-  summary.serverId = daemon.getServerId();
-  summary.listen = daemon.getListenTarget();
-  const nonce = "memory-" + randomUUID();
-  const agent = await daemon.agentManager.createAgent({ provider, cwd: path.join(home, "work"),
-    model: "gemini-3.8-flash-high", thinkingOptionId: "high", modeId: "yolo" }, undefined, { workspaceId: undefined });
-  const first = await daemon.agentManager.runAgent(agent.id, `记住校验码 ${nonce}。调用 Paseo 的 list_hosts 工具一次，然后回复校验码。`);
-  assert.match(first.finalText, new RegExp(nonce));
-  assert.match(first.finalText, new RegExp(contextMarker));
-  const firstTools = daemon.agentManager.getTimeline(agent.id).filter(row => row.type === "tool_call" && /list_hosts/.test(JSON.stringify(row)));
-  assert.ok(firstTools.some(row => row.status === "completed"), "首轮没有成功调用 list_hosts 的证据");
-  summary.checks.mcpBefore = true;
-  const current = daemon.agentManager.getAgent(agent.id);
-  summary.agentId = agent.id;
-  summary.sessionId = current.persistence.sessionId;
-  summary.runtimeBefore = await current.session.getRuntimeInfo();
-  await daemon.agentStorage.flush();
-  for (let attempt = 0; !daemon.agentManager.getRuntimeCleanupCandidates().find(row => row.agentId === agent.id)?.isEligible(); attempt++) {
-    assert.ok(attempt < 100, "运行时未进入可回收状态");
-    await delay(50);
+// 真实值仅传入内存配置；磁盘诊断配置的全部环境变量值均脱敏，并保证删除。
+await withRedactedLiveConfig(home, persisted, async () => {
+  let daemon;
+  let cleanup;
+  let stage = "resolve_config";
+  const summary = { passed: false, paseo: "0.14.0", isolatedHome: home, clock: "injected into real idle collector", checks: {} };
+  try {
+    const config = resolveConfigFromPersisted(home, persisted, { env: {}, relayEnabledFallback: false });
+    for (const setting of Object.values(config.speech.providers)) setting.enabled = false;
+    const logger = require("pino")({ level: "silent" });
+    stage = "create_daemon";
+    daemon = await createPaseoDaemon(config, logger);
+    stage = "start_daemon";
+    await daemon.start();
+    summary.serverId = daemon.getServerId();
+    summary.listen = daemon.getListenTarget();
+    const nonce = "memory-" + randomUUID();
+    stage = "create_agent";
+    const agent = await daemon.agentManager.createAgent({ provider, cwd: path.join(home, "work"),
+      model: "gemini-3.8-flash-high", thinkingOptionId: "high", modeId: "yolo" }, undefined, { workspaceId: undefined });
+    stage = "first_turn";
+    const first = await daemon.agentManager.runAgent(agent.id, `记住校验码 ${nonce}。调用 Paseo 的 list_hosts 工具一次，然后回复校验码。`);
+    stage = "verify_first_turn";
+    assert.match(first.finalText, new RegExp(nonce));
+    assert.match(first.finalText, new RegExp(contextMarker));
+    const firstTools = daemon.agentManager.getTimeline(agent.id).filter(row => row.type === "tool_call" && /list_hosts/.test(JSON.stringify(row)));
+    assert.ok(firstTools.some(row => row.status === "completed"), "首轮没有成功调用 list_hosts 的证据");
+    summary.checks.mcpBefore = true;
+    const current = daemon.agentManager.getAgent(agent.id);
+    summary.agentId = agent.id;
+    summary.sessionId = current.persistence.sessionId;
+    summary.runtimeBefore = await current.session.getRuntimeInfo();
+    await daemon.agentStorage.flush();
+    for (let attempt = 0; !daemon.agentManager.getRuntimeCleanupCandidates().find(row => row.agentId === agent.id)?.isEligible(); attempt++) {
+      assert.ok(attempt < 100, "运行时未进入可回收状态");
+      await delay(50);
+    }
+    cleanup = createIdleRuntimeCleanup({ enabled: true, logger, now: () => Date.now() + 3_600_001,
+      runtimes: () => daemon.agentManager.getRuntimeCleanupCandidates(), schedule: () => () => {} });
+    const swept = await cleanup.sweep();
+    assert.equal(swept.failures.length, 0);
+    assert.ok(swept.collected.some(row => row.agentId === agent.id));
+    summary.checks.idleCollected = true;
+    stage = "resumed_turn";
+    const second = await daemon.agentManager.runAgent(agent.id, "调用 Paseo 的 list_hosts 工具一次，再回复上一轮给你的完整校验码。");
+    stage = "verify_resumed_turn";
+    assert.match(second.finalText, new RegExp(nonce));
+    assert.match(second.finalText, new RegExp(contextMarker));
+    const secondTools = daemon.agentManager.getTimeline(agent.id).filter(row => row.type === "tool_call" && /list_hosts/.test(JSON.stringify(row)));
+    assert.ok(secondTools.filter(row => row.status === "completed").length > firstTools.filter(row => row.status === "completed").length,
+      "恢复后没有新的成功 list_hosts 调用");
+    summary.checks.mcpAfter = true;
+    const resumed = daemon.agentManager.getAgent(agent.id);
+    assert.equal(resumed.persistence.sessionId, summary.sessionId);
+    summary.runtimeAfter = await resumed.session.getRuntimeInfo();
+    assert.equal(summary.runtimeAfter.model, summary.runtimeBefore.model);
+    assert.equal(summary.runtimeAfter.thinkingOptionId, summary.runtimeBefore.thinkingOptionId);
+    summary.checks.sameSessionAndHistory = true;
+    summary.checks.contextRetained = true;
+    summary.checks.modelAndThinkingRetained = true;
+    summary.passed = true;
+  } catch (error) {
+    // 第三方异常可能携带代理 URL 或认证上下文，不把异常原文写入验收产物。
+    summary.error = "live verification failed";
+    summary.errorStage = stage;
+    // 只报告代码位置，不记录可能含环境值的异常消息或栈首行。
+    summary.errorLocations = error instanceof Error ? [...(error.stack ?? "").matchAll(/\b[\w-]+\.(?:m?js|ts):\d+:\d+/g)].map(match => match[0]).slice(0, 3) : [];
+    process.exitCode = 1;
+  } finally {
+    for (const stop of [() => cleanup?.close(), () => daemon?.stop()]) {
+      try { await stop(); }
+      catch {
+        summary.passed = false;
+        summary.error = "live verification cleanup failed";
+        process.exitCode = 1;
+      }
+    }
+    await writeFile(path.join(home, "result.json"), JSON.stringify(summary, null, 2) + "\n", "utf8");
+    console.log(JSON.stringify(summary, null, 2));
   }
-  cleanup = createIdleRuntimeCleanup({ enabled: true, logger, now: () => Date.now() + 3_600_001,
-    runtimes: () => daemon.agentManager.getRuntimeCleanupCandidates(), schedule: () => () => {} });
-  const swept = await cleanup.sweep();
-  assert.equal(swept.failures.length, 0);
-  assert.ok(swept.collected.some(row => row.agentId === agent.id));
-  summary.checks.idleCollected = true;
-  const second = await daemon.agentManager.runAgent(agent.id, "调用 Paseo 的 list_hosts 工具一次，再回复上一轮给你的完整校验码。");
-  assert.match(second.finalText, new RegExp(nonce));
-  assert.match(second.finalText, new RegExp(contextMarker));
-  const secondTools = daemon.agentManager.getTimeline(agent.id).filter(row => row.type === "tool_call" && /list_hosts/.test(JSON.stringify(row)));
-  assert.ok(secondTools.filter(row => row.status === "completed").length > firstTools.filter(row => row.status === "completed").length,
-    "恢复后没有新的成功 list_hosts 调用");
-  summary.checks.mcpAfter = true;
-  const resumed = daemon.agentManager.getAgent(agent.id);
-  assert.equal(resumed.persistence.sessionId, summary.sessionId);
-  summary.runtimeAfter = await resumed.session.getRuntimeInfo();
-  assert.equal(summary.runtimeAfter.model, summary.runtimeBefore.model);
-  assert.equal(summary.runtimeAfter.thinkingOptionId, summary.runtimeBefore.thinkingOptionId);
-  summary.checks.sameSessionAndHistory = true;
-  summary.checks.contextRetained = true;
-  summary.checks.modelAndThinkingRetained = true;
-  summary.passed = true;
-} catch (error) {
-  summary.error = error instanceof Error ? error.message : String(error);
-  process.exitCode = 1;
-} finally {
-  await cleanup?.close();
-  await daemon.stop();
-  await writeFile(path.join(home, "result.json"), JSON.stringify(summary, null, 2) + "\n", "utf8");
-  console.log(JSON.stringify(summary, null, 2));
-}
+});
+// daemon 工厂失败时可能遗留第三方计时器；先完成配置删除，再结束独立验收进程。
+if (process.exitCode) process.exit(process.exitCode);
